@@ -5,8 +5,13 @@ import {PGlite} from '@electric-sql/pglite';
 test('database permissions, account ownership, optimistic writes, and retry receipts',async t=>{
  const db=new PGlite();t.after(()=>db.close());
  await db.exec(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_app_meta_data jsonb);create function auth.uid() returns uuid language sql as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema public,auth to authenticated,anon;grant execute on function auth.uid() to authenticated,anon;`);
+ // Reproduce Supabase's role-specific default grants, beyond PUBLIC grants.
+ await db.exec('alter default privileges in schema public grant execute on functions to anon,authenticated;');
  await db.exec(await readFile(new URL('../supabase/migrations/202611230001_cloud_sync.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202611230003_owner_google_allowlist.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/202611230004_explicit_function_permissions.sql',import.meta.url),'utf8'));
+ for(const name of ['is_app_member()','apply_sync_change(text,text,bigint,jsonb,uuid)','enrol_google_owner()'])assert.equal((await db.query(`select has_function_privilege('anon',$1,'execute') as allowed`,['public.'+name])).rows[0].allowed,false);
+ assert.equal((await db.query("select has_function_privilege('authenticated','public.enrol_google_owner()','execute') as allowed")).rows[0].allowed,false);
  const owner='00000000-0000-0000-0000-000000000001',other='00000000-0000-0000-0000-000000000002',blocked='00000000-0000-0000-0000-000000000003';
  await db.exec(`insert into public.allowed_emails(email) values('owner@example.test');insert into auth.users values('${owner}','owner@example.test',now(),'${JSON.stringify({providers:['google']})}'),('${other}','other@example.test',now(),'{}'),('${blocked}','blocked@example.test',now(),'{}');insert into public.app_members(user_id) values('${other}');set role authenticated;set request.jwt.claim.sub='${owner}';`);
  const article={id:'doc-one',title:'Swedish',text:'En svensk artikel.',deletedAt:null};

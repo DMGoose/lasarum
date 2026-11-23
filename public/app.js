@@ -530,10 +530,10 @@ window.addEventListener('scroll',()=>{
 },{passive:true});
 lastAppSnapshot=snapshot();
 if(cloudEnabled){
- $('#account-controls').hidden=false;$('#local-mode-label').hidden=true;
+ $('#account-controls').hidden=false;$('#local-mode-label').hidden=true;$('.phase-label').textContent='YOUR PRIVATE READING ROOM';$('#storage-description').textContent='Private account · Cross-device sync';
  cloudRuntime=new CloudRuntime({onSnapshot:applyCloudSnapshot,onStatus:syncStatus,onAccess:(user,message)=>{
    $('#workspace').hidden=!user;$('#auth-gate').hidden=!!user;$('#sign-out').hidden=!user;$('#sync-now').hidden=!user;$('#export-backup').disabled=!user;$('#import-backup').disabled=!user;$('#account-email').textContent=user?.email||'';$('#auth-message').textContent=message||'Sign in with the Google account approved for your private reading room.';
-   if(!user){stopReaderSpeech();++requestId;for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();entries=[];library=[];evaluation=emptySnapshot().evaluation;readingProgress={};currentDocument=null;sentences=sampleSentences;visible=[];active=null;renderReader();updateCount();$('#vocabulary-list').replaceChildren();$('#library-list').replaceChildren();config={};lastAppSnapshot=snapshot();}
+   if(!user){stopReaderSpeech();++requestId;for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();backupDraft=null;$('#backup-preview').hidden=true;$('#backup-summary').textContent='';$('#sync-conflicts').replaceChildren();$('#conflict-panel').hidden=true;$('#sync-state').textContent='Sign in to sync';expandedWords.clear();vocabularyAI.clear();entries=[];library=[];evaluation=emptySnapshot().evaluation;readingProgress={};currentDocument=null;sentences=sampleSentences;visible=[];active=null;renderReader();updateCount();$('#vocabulary-list').replaceChildren();$('#library-list').replaceChildren();config={};lastAppSnapshot=snapshot();}
    else void loadConnection();
  }});
  void cloudRuntime.start().catch(error=>$('#auth-message').textContent=error.message);
