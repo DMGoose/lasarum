@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.cache/
+.publish/
+.rollback/
+backups/
+node_modules/
+dist/
+docs/*
+!docs/CLOUD-SETUP.md
+*.log

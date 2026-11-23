@@ -1,0 +1,25 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {PGlite} from '@electric-sql/pglite';
+test('database permissions, account ownership, optimistic writes, and retry receipts',async t=>{
+ const db=new PGlite();t.after(()=>db.close());
+ await db.exec(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_app_meta_data jsonb);create function auth.uid() returns uuid language sql as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema public,auth to authenticated,anon;grant execute on function auth.uid() to authenticated,anon;`);
+ await db.exec(await readFile(new URL('../supabase/migrations/202611230001_cloud_sync.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/202611230003_owner_google_allowlist.sql',import.meta.url),'utf8'));
+ const owner='00000000-0000-0000-0000-000000000001',other='00000000-0000-0000-0000-000000000002',blocked='00000000-0000-0000-0000-000000000003';
+ await db.exec(`insert into public.allowed_emails(email) values('owner@example.test');insert into auth.users values('${owner}','owner@example.test',now(),'${JSON.stringify({providers:['google']})}'),('${other}','other@example.test',now(),'{}'),('${blocked}','blocked@example.test',now(),'{}');insert into public.app_members(user_id) values('${other}');set role authenticated;set request.jwt.claim.sub='${owner}';`);
+ const article={id:'doc-one',title:'Swedish',text:'En svensk artikel.',deletedAt:null};
+ const call=(id,version,patch,op)=>db.query('select public.apply_sync_change($1,$2,$3,$4,$5) as result',['articles',id,version,patch,op]);
+ const op='10000000-0000-0000-0000-000000000001';const first=(await call('doc-one',0,article,op)).rows[0].result;
+ assert.equal(first.status,'applied');assert.equal(first.record.version,1);
+ assert.deepEqual((await call('doc-one',0,article,op)).rows[0].result,first);
+ await assert.rejects(()=>call('doc-one',0,{...article,title:'mutated'},op),/reused/);
+ assert.equal((await call('doc-one',0,article,'10000000-0000-0000-0000-000000000002')).rows[0].result.status,'conflict');
+ await assert.rejects(()=>db.exec(`update public.articles set data='{}'`),/permission denied/);
+ await assert.rejects(()=>db.exec(`insert into public.app_members(user_id) values('${blocked}')`),/permission denied/);
+ await db.exec(`set request.jwt.claim.sub='${other}'`);assert.equal((await db.query('select * from public.articles')).rows.length,0);
+ assert.equal((await call('doc-one',0,article,'10000000-0000-0000-0000-000000000003')).rows[0].result.status,'applied');
+ await db.exec(`set request.jwt.claim.sub='${blocked}'`);await assert.rejects(()=>call('blocked',0,{...article,id:'blocked'},'10000000-0000-0000-0000-000000000004'),/not authorized/);
+ await db.exec('set role anon');await assert.rejects(()=>db.query('select * from public.articles'),/permission denied/);
+});

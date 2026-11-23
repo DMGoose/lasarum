@@ -1,0 +1,12 @@
+project_id = "rzkimppqujistuchlrpa"
+
+[functions.lookup]
+verify_jwt = false
+[functions.speech]
+verify_jwt = false
+[functions.import-url]
+verify_jwt = false
+[functions.models]
+verify_jwt = false
+[functions.app-config]
+verify_jwt = false
