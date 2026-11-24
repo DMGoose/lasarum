@@ -4,6 +4,8 @@ import {tokenize, rangeSelection, addVisible, upsertEntry, removeLookup, createL
 import {CloudRuntime,cloudEnabled} from './cloud-runtime.js';
 import {cloudRequest,speechResponse} from './cloud-api.js';
 import {emptySnapshot,validateBackup,mergeBackup} from './sync-core.js';
+import {importDocuments,splitChapters,paginateSentences,restoredPage,pageSpeechText,libraryGroups,MAX_TXT_BYTES} from './reading.js';
+import {LocalDatabase} from './local-db.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const escape = text => String(text ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -12,9 +14,12 @@ let saved = {};
 try { if(!cloudEnabled)saved = JSON.parse(localStorage.getItem(STORAGE) || '{}'); } catch { /* Recover with an empty prototype state. */ }
 let entries = Array.isArray(saved.entries) ? saved.entries : [], evaluation = saved.evaluation || {results:[],preferred:'',notes:''};
 let library=Array.isArray(saved.library)?saved.library:[],currentDocument=library.find(item=>item.id===saved.currentDocumentId&&!item.deletedAt)||null;
-let sentences=currentDocument?articleSentences(currentDocument.text,currentDocument.id):sampleSentences;
-let readingProgress=saved.readingProgress||{},cloudRuntime=null,backupDraft=null,applyingRemote=false,pendingLocalSaves=0,deferredRemote=false,lastAppSnapshot=null;
-if(cloudEnabled){$('#workspace').hidden=true;$('#auth-gate').hidden=false;}
+let readingProgress=saved.readingProgress||{};
+let readerPages=paginateSentences(currentDocument?articleSentences(currentDocument.text,currentDocument.id):sampleSentences);
+let currentPage=restoredPage(readerPages,readingProgress[currentDocument?.id||'sample']),sentences=readerPages[currentPage];
+const deviceDB=cloudEnabled?null:new LocalDatabase();
+let cloudRuntime=null,backupDraft=null,applyingRemote=false,pendingLocalSaves=0,deferredRemote=false,lastAppSnapshot=null;
+$('#workspace').hidden=true;if(cloudEnabled)$('#auth-gate').hidden=false;
 let visible = [], active = null, phrase = false, anchor = null, config = {}, requestId = 0, toastTimer;
 let returnFocus = null;
 let dragStart = null, suppressClick = false;
@@ -40,7 +45,7 @@ function updateTransport() {
 }
 function updateSpeechControls(message) {
  if(message!==undefined)speechMessage=message;
- for(const [selector,owner,label] of [['#read-aloud','article','Read aloud'],['#play-word',active?.id,'Pronounce word']]){
+ for(const [selector,owner,label] of [['#read-aloud',pageAudioOwner(),'Read page'],['#play-word',active?.id,'Pronounce word']]){
    const button=$(selector);if(!button)continue;
    const selected=speechOwner===owner;
    if(selector==='#play-word'){
@@ -109,7 +114,8 @@ document.addEventListener('input',event=>{
  if(event.target.matches('[data-reader-seek]')&&speechURL){readerAudio.currentTime=Number(event.target.value);updateTransport();}
  if(event.target.matches('[data-reader-speed]')){readerSpeed=Number(event.target.value);readerAudio.playbackRate=readerSpeed;updateTransport();}
 });
-$('#read-aloud').onclick=()=>speakInReader(sentences.map(sentence=>sentence.text).join(' '),'article');
+function pageAudioOwner(){return `page:${currentDocument?.id||'sample'}:${currentPage}`;}
+$('#read-aloud').onclick=()=>speakInReader(pageSpeechText(sentences),pageAudioOwner());
 async function undoLookup(selection) {
  if(speechOwner===selection.id)stopReaderSpeech();
  lookupTracker.cancel(selection.id);
@@ -152,53 +158,80 @@ function toast(message) {$('#toast').textContent=message;$('#toast').hidden=fals
 function snapshot(){return structuredClone({entries,evaluation,library,currentDocumentId:currentDocument?.id||null,readingProgress});}
 async function persist() {
  const next=snapshot(),before=lastAppSnapshot;lastAppSnapshot=next;++pendingLocalSaves;
- try {if(cloudEnabled)await cloudRuntime.save(next,before);else localStorage.setItem(STORAGE,JSON.stringify(next));return true;}
- catch {toast('Could not save locally. Export your work before closing this page.');return false;}
+ try {if(cloudEnabled)await cloudRuntime.save(next,before);else await deviceDB.save('local-device',{snapshot:next});return true;}
+ catch {if(lastAppSnapshot===next)lastAppSnapshot=before;toast('Could not save locally. Export your work before closing this page.');return false;}
  finally{--pendingLocalSaves;if(!pendingLocalSaves&&deferredRemote&&cloudRuntime?.engine){deferredRemote=false;applyCloudSnapshot(cloudRuntime.engine.state.snapshot);}}
 }
 function updateCount() {$('#word-count').textContent=entries.length;}
 let importedURL=null,libraryDraftVersion=0;
 function articleMetadata() {
  $('.book h2').textContent=currentDocument?.title||'En sida i taget';
- $('.book .subtitle').textContent=currentDocument?'Your imported Swedish reading':'One page at a time';
+ $('.book .subtitle').textContent=currentDocument?.bookTitle||(currentDocument?'':'One page at a time');$('.book .subtitle').hidden=!!currentDocument&&!currentDocument.bookTitle;
  $('.book .article-meta span').textContent=currentDocument?({txt:'TXT ARTICLE',url:'WEB ARTICLE',paste:'PASTED ARTICLE'}[currentDocument.sourceType]||'YOUR ARTICLE'):'ORIGINAL READING SAMPLE';
  $('.book .article-meta span:last-child').textContent=currentDocument?`${sentences.reduce((n,s)=>n+tokenize(s.text).filter(t=>t.word).length,0)} WORDS`:'A2–B1 · SHORT READ';
  $('.book-footer span').textContent=currentDocument?(currentDocument.sourceUrl?new URL(currentDocument.sourceUrl).hostname:'Saved in your Library'):'Göteborg, en stilla morgon';
  $('.book').setAttribute('aria-label',currentDocument?.title||'Swedish reading sample');
  $('#reader-source').hidden=!currentDocument?.sourceUrl;
  if(currentDocument?.sourceUrl){$('#reader-source').href=currentDocument.sourceUrl;$('#reader-source').textContent='Open original webpage ↗';}
- $('#back-library').hidden=!currentDocument;
+ $('#back-library').hidden=!currentDocument;updateReadingNavigation();
 }
-function setReaderArticle(document) {
- stopReaderSpeech();++requestId;
+function setReaderArticle(document,{pageIndex}={}) {
+ clearTimeout(progressTimer);stopReaderSpeech();++requestId;
  for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();
- currentDocument=document;sentences=document?articleSentences(document.text,document.id):sampleSentences;
+ currentDocument=document;readerPages=paginateSentences(document?articleSentences(document.text,document.id):sampleSentences);
+ currentPage=pageIndex===undefined?restoredPage(readerPages,readingProgress[document?.id||'sample']):Math.max(0,Math.min(readerPages.length-1,pageIndex));sentences=readerPages[currentPage];
  visible=[];active=null;anchor=null;returnFocus=null;
  $('#lookup-origin').textContent='Word details';$('#detail-content').innerHTML='<div class="empty-detail"><p>Select a word to translate.</p></div>';
  articleMetadata();setMode(false);
 }
-async function openArticle(document) {setReaderArticle(document);await persist();showView('reader');window.scrollTo({top:0,behavior:'instant'});const progress=readingProgress[document?.id||'sample'];if(progress?.sentenceId)requestAnimationFrame(()=>[...document.querySelectorAll('.sentence')].find(el=>el.dataset.sentence===progress.sentenceId)?.scrollIntoView({block:'start'}));}
+function bookChapters(){return currentDocument?.bookId?library.filter(item=>item.bookId===currentDocument.bookId&&!item.deletedAt).sort((a,b)=>a.chapterIndex-b.chapterIndex):[];}
+function updateReadingNavigation(){
+ const chapters=bookChapters(),index=chapters.findIndex(item=>item.id===currentDocument?.id),hasPrevious=currentPage>0||index>0,hasNext=currentPage<readerPages.length-1||(index>=0&&index<chapters.length-1);
+ $('[data-chapter-control]').hidden=chapters.length<2;
+ $('#chapter-select').innerHTML=chapters.map((chapter,i)=>`<option value="${escape(chapter.id)}" ${chapter.id===currentDocument?.id?'selected':''}>${i+1}. ${escape(chapter.title)}</option>`).join('');
+ $$('[data-page-navigation]').forEach(nav=>nav.hidden=readerPages.length<2&&chapters.length<2);
+ $$('[data-page-label]').forEach(label=>label.textContent=`Page ${currentPage+1} / ${readerPages.length}`);
+ $$('[data-page-step]').forEach(button=>button.disabled=Number(button.dataset.pageStep)<0?!hasPrevious:!hasNext);
+}
+async function openArticle(document,options={}) {
+ setReaderArticle(document,options);
+ const key=document?.id||'sample',prior=readingProgress[key]||{};
+ readingProgress[key]={pageIndex:currentPage,sentenceId:options.pageIndex===undefined&&sentences.some(sentence=>sentence.id===prior.sentenceId)?prior.sentenceId:sentences[0]?.id};
+ if(document?.bookId)readingProgress[`book:${document.bookId}`]={documentId:document.id};
+ await persist();showView('reader');window.scrollTo({top:0,behavior:'instant'});
+ const progress=readingProgress[key];if(progress?.sentenceId)requestAnimationFrame(()=>[...window.document.querySelectorAll('.sentence')].find(el=>el.dataset.sentence===progress.sentenceId)?.scrollIntoView({block:'nearest'}));
+}
+let turningPage=false;
+document.addEventListener('click',async event=>{
+ const button=event.target.closest('[data-page-step]');if(!button||button.disabled||turningPage)return;
+ turningPage=true;try{
+   const step=Number(button.dataset.pageStep),target=currentPage+step;
+   if(target>=0&&target<readerPages.length)await openArticle(currentDocument,{pageIndex:target});
+   else{const chapters=bookChapters(),index=chapters.findIndex(item=>item.id===currentDocument?.id),next=chapters[index+step];if(next)await openArticle(next,{pageIndex:step>0?0:Number.MAX_SAFE_INTEGER});}
+ }finally{turningPage=false;}
+});
+$('#chapter-select').onchange=()=>{const chapter=library.find(item=>item.id===$('#chapter-select').value&&!item.deletedAt);if(chapter)void openArticle(chapter);};
 let showDeletedArticles=false;
 function renderLibrary() {
  const query=$('#library-search').value.trim().toLowerCase();
- const documents=library.filter(item=>!!item.deletedAt===showDeletedArticles&&`${item.title} ${item.text} ${item.sourceUrl||''}`.toLowerCase().includes(query));
- const count=library.filter(item=>!item.deletedAt).length,deleted=library.length-count;
+ const documents=libraryGroups(library,showDeletedArticles,query);
+ const count=libraryGroups(library).length,deleted=libraryGroups(library,true).length;
  $('#library-count').textContent=`${count} saved ${count===1?'article':'articles'}`;
  $('#show-deleted').textContent=showDeletedArticles?'← Back to articles':`Recently deleted (${deleted})`;$('#show-deleted').setAttribute('aria-pressed',String(showDeletedArticles));
- $('#library-list').innerHTML=documents.length?documents.map(item=>`<article class="library-card"><div class="library-card-header"><span class="pill">${item.sourceType==='txt'?'TXT':item.sourceType==='url'?'Webpage':'Pasted text'}</span>${item.deletedAt?'':`<button type="button" class="delete-article" data-delete-document="${escape(item.id)}" aria-label="Delete ${escape(item.title)}" title="Delete article"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button>`}</div><h3>${escape(item.title)}</h3><p class="library-excerpt">${escape(item.text.slice(0,180))}${item.text.length>180?'…':''}</p><p class="source-note">${escape(item.sourceUrl?new URL(item.sourceUrl).hostname:'Your own text')} · ${new Date(item.createdAt).toLocaleDateString()}</p>${item.deletedAt?`<button type="button" data-restore-document="${escape(item.id)}">Restore article</button>`:`<button type="button" data-read-document="${escape(item.id)}">Open in Read →</button>`}</article>`).join(''):`<div class="empty-state">${query?'No matching articles.':showDeletedArticles?'No recently deleted articles.':'No articles yet.'}</div>`;
+ $('#library-list').innerHTML=documents.length?documents.map(item=>`<article class="library-card"><div class="library-card-header"><span class="pill">${item.sourceType==='txt'?'TXT':item.sourceType==='url'?'Webpage':'Pasted text'}${item.chapters.length>1?` · ${item.chapters.length} chapters`:''}</span>${item.deletedAt?'':`<button type="button" class="delete-article" data-delete-document="${escape(item.id)}" aria-label="Delete ${escape(item.title)}" title="Delete article"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button>`}</div><h3>${escape(item.title)}</h3><p class="library-excerpt">${escape(item.text.slice(0,180))}${item.text.length>180?'…':''}</p><p class="source-note">${escape(item.sourceUrl?new URL(item.sourceUrl).hostname:'Your own text')} · ${new Date(item.createdAt).toLocaleDateString()}</p>${item.deletedAt?`<button type="button" data-restore-document="${escape(item.id)}">Restore article</button>`:`<button type="button" data-read-document="${escape(item.id)}">Open in Read →</button>`}</article>`).join(''):`<div class="empty-state">${query?'No matching articles.':showDeletedArticles?'No recently deleted articles.':'No articles yet.'}</div>`;
 }
 $('#show-deleted').onclick=()=>{showDeletedArticles=!showDeletedArticles;renderLibrary();};
 $('#library-list').addEventListener('click',async event=>{
  const button=event.target.closest('[data-read-document],[data-delete-document],[data-restore-document]');if(!button)return;
  const id=button.dataset.readDocument||button.dataset.deleteDocument||button.dataset.restoreDocument,article=library.find(item=>item.id===id);if(!article)return;
- if(button.hasAttribute('data-read-document')){if(!article.deletedAt)openArticle(article);return;}
- const wasDeleted=article.deletedAt,wasCurrent=currentDocument?.id===id;
- if(button.hasAttribute('data-delete-document')){article.deletedAt=new Date().toISOString();if(wasCurrent)setReaderArticle(null);}
- else delete article.deletedAt;
- if(!await persist()){if(wasDeleted)article.deletedAt=wasDeleted;else delete article.deletedAt;if(wasCurrent)setReaderArticle(article);return;}
+ if(button.hasAttribute('data-read-document')){if(!article.deletedAt){const resumed=article.bookId&&library.find(item=>item.id===readingProgress[`book:${article.bookId}`]?.documentId&&item.bookId===article.bookId&&!item.deletedAt);void openArticle(resumed||article);}return;}
+ const targets=library.filter(item=>article.bookId?item.bookId===article.bookId:item.id===id),previous=targets.map(item=>({item,deletedAt:item.deletedAt})),oldDocument=currentDocument,wasCurrent=targets.some(item=>item.id===currentDocument?.id);
+ if(button.hasAttribute('data-delete-document')){for(const item of targets)if(!item.deletedAt)item.deletedAt=new Date().toISOString();if(wasCurrent)setReaderArticle(null);}
+ else for(const item of targets)delete item.deletedAt;
+ if(!await persist()){for(const {item,deletedAt} of previous){if(deletedAt)item.deletedAt=deletedAt;else delete item.deletedAt;}if(wasCurrent)setReaderArticle(oldDocument);return;}
  renderLibrary();
 });
-$('#library-search').oninput=renderLibrary;
+let librarySearchTimer;$('#library-search').oninput=()=>{clearTimeout(librarySearchTimer);librarySearchTimer=setTimeout(renderLibrary,200);};
 $('#open-sample').onclick=()=>openArticle(null);$('#back-library').onclick=()=>showView('library');
 function importStatus(message,error=false){const status=$('#import-status');status.textContent=message;status.classList.toggle('error',error);}
 $('#import-method').onchange=()=>{
@@ -212,12 +245,12 @@ $('#txt-upload').onchange=async event=>{
  const file=event.target.files[0];if(!file)return;const version=++libraryDraftVersion;
  try{
    if(!/\.txt$/i.test(file.name))throw new Error('Choose a .txt plain-text file.');
-   if(file.size>512*1024)throw new Error('Choose a TXT file smaller than 512 KB.');
+   if(file.size>MAX_TXT_BYTES)throw new Error('Choose a TXT file smaller than 20 MB.');
    const bytes=await file.arrayBuffer();if(version!==libraryDraftVersion)return;
    let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{throw new Error('Save this TXT file with UTF-8 encoding, then upload it again.');}
-   text=cleanArticleText(text);articleSentences(text,'preview');
+   text=cleanArticleText(text);const preview=splitChapters(text);for(const chapter of preview)articleSentences(chapter.text,'preview');
    $('#import-body').value=text;$('#import-title').value=file.name.replace(/\.txt$/i,'');importedURL=null;
-   importStatus('TXT loaded. Check the title and text, then Save and open.');
+   importStatus(`TXT loaded · ${preview.length} ${preview.length===1?'chapter':'chapters'}. Save to import.`);
  }catch(err){importStatus(err.message,true);}
 };
 $('#fetch-article').onclick=async()=>{
@@ -226,24 +259,23 @@ $('#fetch-article').onclick=async()=>{
    const result=await(await api('/api/import-url',{url:$('#article-url').value.trim()})).json();
    if(version!==libraryDraftVersion)return;
    const article=/^text\/plain/i.test(result.contentType)?{title:new URL(result.url).hostname,text:cleanArticleText(result.content)}:extractWebArticle(result.content,result.url);
-   articleSentences(article.text,'preview');$('#import-body').value=article.text;$('#import-title').value=article.title;
+   for(const chapter of splitChapters(article.text))articleSentences(chapter.text,'preview');$('#import-body').value=article.text;$('#import-title').value=article.title;
    $('#import-body-label').hidden=false;importedURL=result.url;importStatus('Article fetched. Review the extracted text below before saving.');
  }catch(err){if(version===libraryDraftVersion)importStatus(err.message,true);}
  finally{button.disabled=false;}
 };
 $('#import-form').onsubmit=async event=>{
- event.preventDefault();
+ event.preventDefault();const button=$('#import-form button[type=submit]');if(button.disabled)return;button.disabled=true;
  try{
    const sourceType=$('#import-method').value;
    if(sourceType==='url'&&!importedURL)throw new Error('Fetch the webpage first, then check its article text.');
-   const text=cleanArticleText($('#import-body').value),id=`doc-${crypto.randomUUID()}`;
-   articleSentences(text,id);
-   const title=($('#import-title').value.trim()||text.split('\n')[0].slice(0,80)).slice(0,200);
-   const document={id,title,text,sourceType,sourceUrl:sourceType==='url'?importedURL:null,createdAt:new Date().toISOString()};
-   library.unshift(document);if(!await persist()){library.shift();throw new Error('The article could not be saved. Free some browser storage or import a shorter text.');}
+   const text=cleanArticleText($('#import-body').value),title=($('#import-title').value.trim()||text.split('\n')[0].slice(0,80)).slice(0,200);
+   importStatus('Splitting and saving chapters…');await new Promise(resolve=>setTimeout(resolve,0));
+   const documents=importDocuments(text,{title,sourceType,sourceUrl:sourceType==='url'?importedURL:null}),previous=library;
+   library=[...documents,...library];if(!await persist()){library=previous;throw new Error('Could not save the chapters. Export a backup and check browser storage.');}
    $('#import-form').reset();$('.import-tools').open=false;importedURL=null;++libraryDraftVersion;$('#import-method').onchange();$('#import-body').value='';importStatus('');
-   openArticle(document);
- }catch(err){importStatus(err.message,true);}
+   await openArticle(documents[0],{pageIndex:0});
+ }catch(err){importStatus(err.message,true);}finally{button.disabled=false;}
 };
 function showView(view) {
  stopReaderSpeech();
@@ -490,15 +522,16 @@ function scheduleNoteSave(label){
  clearTimeout(noteTimer);noteTimer=setTimeout(()=>cloudRuntime?.engine?.sync(),800);
 }
 $('#vocabulary-list').addEventListener('focusout',event=>{if(event.target.matches('[data-vocab-note]')){clearTimeout(noteTimer);void persist().then(()=>cloudRuntime?.engine?.sync());}});
-function applyCloudSnapshot(value){
+function applyCloudSnapshot(value,{preserveActive=true}={}){
  if(pendingLocalSaves){deferredRemote=true;return;}
  applyingRemote=true;
- const oldDocument=currentDocument,oldSentenceText=sentences.map(s=>s.text).join(' ');
+ const oldDocument=currentDocument,oldPage=currentPage,oldSentenceText=pageSpeechText(sentences);
  entries=value.entries||[];library=value.library||[];evaluation=value.evaluation||emptySnapshot().evaluation;readingProgress=value.readingProgress||{};
  currentDocument=library.find(item=>item.id===value.currentDocumentId&&!item.deletedAt)||null;
  // Never jump to a different article in the middle of reading because another device opened it.
- if(oldDocument&&library.some(item=>item.id===oldDocument.id&&!item.deletedAt)&&!$('#reader-view').hidden)currentDocument=library.find(item=>item.id===oldDocument.id);
- sentences=currentDocument?articleSentences(currentDocument.text,currentDocument.id):sampleSentences;
+ if(preserveActive&&oldDocument&&library.some(item=>item.id===oldDocument.id&&!item.deletedAt)&&!$('#reader-view').hidden)currentDocument=library.find(item=>item.id===oldDocument.id);
+ readerPages=paginateSentences(currentDocument?articleSentences(currentDocument.text,currentDocument.id):sampleSentences);
+ currentPage=preserveActive&&oldDocument?.id===currentDocument?.id&&!$('#reader-view').hidden?Math.min(oldPage,readerPages.length-1):restoredPage(readerPages,readingProgress[currentDocument?.id||'sample']);sentences=readerPages[currentPage];
  visible=visible.filter(item=>entries.some(entry=>entry.id===item.id));
  if(active&&!entries.some(entry=>entry.id===active.id)&&!pendingLookups.has(active.id)){active=null;closeDetails();$('#detail-content').innerHTML='<div class="empty-detail">Choose a word to explore its meaning.</div>';}
  if(oldSentenceText!==sentences.map(s=>s.text).join(' ')){visible=[];active=null;anchor=null;stopReaderSpeech();}
@@ -535,16 +568,19 @@ $('#confirm-backup').onclick=async()=>{if(!backupDraft)return;const merged=merge
 let progressTimer;
 window.addEventListener('scroll',()=>{
  if(applyingRemote||$('#reader-view').hidden||(cloudEnabled&&!cloudRuntime?.user))return;
- clearTimeout(progressTimer);progressTimer=setTimeout(()=>{const sentence=$$('.sentence').find(el=>el.getBoundingClientRect().bottom>120);if(sentence){readingProgress[currentDocument?.id||'sample']={sentenceId:sentence.dataset.sentence};void persist();}},1000);
+ clearTimeout(progressTimer);progressTimer=setTimeout(()=>{const sentence=$$('.sentence').find(el=>el.getBoundingClientRect().bottom>120);if(sentence){readingProgress[currentDocument?.id||'sample']={sentenceId:sentence.dataset.sentence,pageIndex:currentPage};void persist();}},1000);
 },{passive:true});
 lastAppSnapshot=snapshot();
 if(cloudEnabled){
  $('#account-controls').hidden=false;$('#local-mode-label').hidden=true;$('.backup-menu>summary').textContent='Account';
  cloudRuntime=new CloudRuntime({onSnapshot:applyCloudSnapshot,onStatus:syncStatus,onAccess:(user,message)=>{
    $('#workspace').hidden=!user;$('#auth-gate').hidden=!!user;$('#sign-out').hidden=!user;$('#sync-now').hidden=!user;$('#export-backup').disabled=!user;$('#import-backup').disabled=!user;$('#account-email').textContent=user?.email||'';$('#auth-message').textContent=message||'Sign in with the Google account approved for your private reading room.';
-   if(!user){stopReaderSpeech();++requestId;for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();backupDraft=null;$('#backup-preview').hidden=true;$('#backup-summary').textContent='';$('#sync-conflicts').replaceChildren();$('#conflict-panel').hidden=true;$('#sync-state').textContent='Sign in to sync';expandedWords.clear();vocabularyAI.clear();entries=[];library=[];evaluation=emptySnapshot().evaluation;readingProgress={};currentDocument=null;sentences=sampleSentences;visible=[];active=null;renderReader();updateCount();$('#vocabulary-list').replaceChildren();$('#library-list').replaceChildren();config={};lastAppSnapshot=snapshot();}
+   if(!user){stopReaderSpeech();++requestId;for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();backupDraft=null;$('#backup-preview').hidden=true;$('#backup-summary').textContent='';$('#sync-conflicts').replaceChildren();$('#conflict-panel').hidden=true;$('#sync-state').textContent='Sign in to sync';expandedWords.clear();vocabularyAI.clear();entries=[];library=[];evaluation=emptySnapshot().evaluation;readingProgress={};currentDocument=null;readerPages=paginateSentences(sampleSentences);currentPage=0;sentences=readerPages[0];visible=[];active=null;renderReader();updateCount();$('#vocabulary-list').replaceChildren();$('#library-list').replaceChildren();config={};lastAppSnapshot=snapshot();}
    else void loadConnection();
  }});
  void cloudRuntime.start().catch(error=>$('#auth-message').textContent=error.message);
-}else{$('#local-mode-label').hidden=false;void loadConnection();}
+}else{
+ $('#local-mode-label').hidden=false;
+ void(async()=>{try{const cached=await deviceDB.load('local-device');if(cached?.snapshot)applyCloudSnapshot(cached.snapshot,{preserveActive:false});else await deviceDB.save('local-device',{snapshot:snapshot()});}catch{toast('Could not open local storage. Export a backup before importing a long text.');}finally{$('#workspace').hidden=false;void loadConnection();}})();
+}
 

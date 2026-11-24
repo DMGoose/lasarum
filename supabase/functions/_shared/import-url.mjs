@@ -32,7 +32,7 @@ function downloadNode(url,address) {
      if(!/^(text\/html|text\/plain|application\/xhtml\+xml)/i.test(type)){response.resume();reject(fail(400,'This link is not an HTML webpage or plain-text article.'));return;}
      if(response.headers['content-encoding']&&!/^identity$/i.test(response.headers['content-encoding'])){response.resume();reject(fail(502,'This webpage uses an unsupported encoding. Paste its article text instead.'));return;}
      let size=0;const chunks=[];
-     response.on('data',chunk=>{size+=chunk.length;if(size>2*1024*1024){response.destroy(fail(413,'This webpage is too large. Paste just the article text instead.'));return;}chunks.push(chunk);});
+     response.on('data',chunk=>{size+=chunk.length;if(size>20*1024*1024){response.destroy(fail(413,'This webpage is too large. Paste just the article text instead.'));return;}chunks.push(chunk);});
      response.on('error',reject);
      response.on('end',()=>{
        try{const charset=/charset=["']?([^;\s"']+)/i.exec(type)?.[1]||'utf-8';resolve({status:200,type,body:new TextDecoder(charset).decode(Buffer.concat(chunks))});}
@@ -60,7 +60,7 @@ async function downloadEdge(url,address) {
    const request=new TextEncoder().encode(`GET ${url.pathname}${url.search} HTTP/1.1\r\nHost: ${url.host}\r\nUser-Agent: Lasrum-Article-Importer/1.0\r\nAccept: text/html,text/plain;q=0.9\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n`);
    for(let sent=0;sent<request.length;){const written=await connection.write(request.subarray(sent));if(!written)throw fail(502,'The webpage connection closed.');sent+=written;}
    const parts=[];let size=0;
-   while(true){const buffer=new Uint8Array(16384),count=await connection.read(buffer);if(count===null)break;if(!count)continue;size+=count;if(size>2*1024*1024+65536)throw fail(413,'This webpage is too large. Paste just the article text instead.');parts.push(buffer.subarray(0,count));}
+   while(true){const buffer=new Uint8Array(16384),count=await connection.read(buffer);if(count===null)break;if(!count)continue;size+=count;if(size>20*1024*1024+65536)throw fail(413,'This webpage is too large. Paste just the article text instead.');parts.push(buffer.subarray(0,count));}
    const bytes=new Uint8Array(size);let at=0;for(const part of parts){bytes.set(part,at);at+=part.length;}
    return parseHTTPResponse(bytes);
  })();

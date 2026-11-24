@@ -1,10 +1,10 @@
-export const MAX_ARTICLE_LENGTH=100000;
+export const MAX_ARTICLE_LENGTH=5000000;
 export function cleanArticleText(text) {
  if(typeof text!=='string')throw new Error('Add some article text first.');
  const cleaned=text.replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n').replace(/[\t\u00a0]/g,' ').replace(/[ ]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
  if(!cleaned||!/[\p{L}\p{N}]/u.test(cleaned))throw new Error('This article has no readable text.');
  if(cleaned.includes('\0'))throw new Error('This file does not look like plain text. Choose a UTF-8 TXT file.');
- if(cleaned.length>MAX_ARTICLE_LENGTH)throw new Error('This article is too long. Import up to 100,000 characters at a time.');
+ if(cleaned.length>MAX_ARTICLE_LENGTH)throw new Error('This text is too large. Import up to 5 million characters at a time.');
  return cleaned;
 }
 export function articleSentences(text,id) {

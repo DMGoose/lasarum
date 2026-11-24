@@ -76,3 +76,10 @@
 .section-head>div{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
 #library-count{margin:0;font-size:.75rem}
 .backup-controls #account-email:empty{display:none}
+
+.page-navigation{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0;font-size:.8rem}
+.page-navigation button{min-height:44px;font-size:.8rem;padding:9px 12px}
+.page-navigation [data-page-label]{text-align:center;color:var(--muted);font-variant-numeric:tabular-nums}
+[data-chapter-control]{flex:1;max-width:480px;min-width:160px}
+#chapter-select{margin:0;font-size:.85rem;min-height:44px}
+@media(max-width:730px){[data-chapter-control]{max-width:none;flex-basis:100%}#chapter-select{font-size:16px}.page-navigation{gap:8px}.page-navigation button{padding:9px}.page-navigation [data-page-label]{font-size:.75rem}}

@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {cleanArticleText,articleSentences,speechChunks} from '../public/library.js';
+import {MAX_ARTICLE_LENGTH,cleanArticleText,articleSentences,speechChunks} from '../public/library.js';
 import {fetchPublicArticle,isPublicAddress,webURL} from '../import-url.mjs';
 
 test('TXT normalization preserves Swedish text and paragraph structure',()=>{
  const text=cleanArticleText('\uFEFFÅsa läser.\r\n\r\nGöteborg är stilla.\r\n');
  assert.equal(text,'Åsa läser.\n\nGöteborg är stilla.');
- assert.throws(()=>cleanArticleText('   '));assert.throws(()=>cleanArticleText('a'.repeat(100001)));assert.throws(()=>cleanArticleText('binary\0text'));
+ assert.throws(()=>cleanArticleText('   '));assert.throws(()=>cleanArticleText('a'.repeat(MAX_ARTICLE_LENGTH+1)));assert.throws(()=>cleanArticleText('binary\0text'));
 });
 test('imported article locations stay stable and separate from other articles',()=>{
  const text='Åsa läser. Hon tycker om kaffe.\n\nGöteborg är stilla.';

@@ -31,7 +31,7 @@ function download(url,address) {
      if(!/^(text\/html|text\/plain|application\/xhtml\+xml)/i.test(type)){response.resume();reject(fail(400,'This link is not an HTML webpage or plain-text article.'));return;}
      if(response.headers['content-encoding']&&!/^identity$/i.test(response.headers['content-encoding'])){response.resume();reject(fail(502,'This webpage uses an unsupported encoding. Paste its article text instead.'));return;}
      let size=0;const chunks=[];
-     response.on('data',chunk=>{size+=chunk.length;if(size>2*1024*1024){response.destroy(fail(413,'This webpage is too large. Paste just the article text instead.'));return;}chunks.push(chunk);});
+     response.on('data',chunk=>{size+=chunk.length;if(size>20*1024*1024){response.destroy(fail(413,'This webpage is too large. Paste just the article text instead.'));return;}chunks.push(chunk);});
      response.on('error',reject);
      response.on('end',()=>{
        try{const charset=/charset=["']?([^;\s"']+)/i.exec(type)?.[1]||'utf-8';resolve({status:200,type,body:new TextDecoder(charset).decode(Buffer.concat(chunks))});}

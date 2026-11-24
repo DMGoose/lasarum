@@ -60,6 +60,8 @@ export function validateBackup(raw){
  for(const article of snapshot.library){
    if(typeof article.id!=='string'||!article.id||article.id.length>250||ids.has(article.id))throw new Error('The backup has invalid or duplicate article IDs.');ids.add(article.id);
    if(typeof article.title!=='string'||article.title.length>200)throw new Error('The backup has an invalid article title.');
+   if(article.bookId!==undefined&&(typeof article.bookId!=='string'||!article.bookId||article.bookId.length>250||typeof article.bookTitle!=='string'||article.bookTitle.length>200||!Number.isInteger(article.chapterIndex)||article.chapterIndex<0||!Number.isInteger(article.chapterCount)||article.chapterCount<1||article.chapterIndex>=article.chapterCount))throw new Error('The backup has invalid chapter metadata.');
+   if(typeof article.text!=='string'||article.text.length>100000)throw new Error('A backup chapter exceeds the supported record size.');
    cleanArticleText(article.text);articleSentences(article.text,article.id);
    if(article.sourceUrl){const url=new URL(article.sourceUrl);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw new Error('The backup has an unsafe article URL.');}
  }

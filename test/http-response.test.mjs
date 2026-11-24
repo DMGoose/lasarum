@@ -12,7 +12,7 @@ test('edge HTTP response decoding preserves Swedish UTF-8 and bounded chunk fram
 });
 test('edge HTTP response decoding rejects truncation, ambiguous framing, oversized chunks and binary files',()=>{
  for(const headers of ['Content-Length: 9','Transfer-Encoding: chunked\r\nContent-Length: 3','Transfer-Encoding: gzip'])assert.throws(()=>parseHTTPResponse(encode(`HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n${headers}\r\n\r\nabc`)),/invalid response/);
- assert.throws(()=>parseHTTPResponse(encode('HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n200001\r\n')),/too large/);
+ assert.throws(()=>parseHTTPResponse(encode('HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n1400001\r\n')),/too large/);
  assert.throws(()=>parseHTTPResponse(encode('HTTP/1.1 200 OK\r\nContent-Type: image/png\r\n\r\nabc')),/not an HTML/);
  assert.throws(()=>parseHTTPResponse(encode('HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nabc')),/invalid response/);
 });

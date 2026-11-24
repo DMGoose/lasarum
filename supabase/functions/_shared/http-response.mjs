@@ -1,5 +1,5 @@
 const fail=(status,message)=>Object.assign(new Error(message),{status});
-const MAX=2*1024*1024;
+const MAX=20*1024*1024;
 const malformed=()=>fail(502,'The webpage returned an invalid response. Paste its article text instead.');
 function lineEnd(bytes,start){for(let i=start;i<bytes.length-1;i++)if(bytes[i]===13&&bytes[i+1]===10)return i;return -1;}
 export function parseHTTPResponse(bytes){

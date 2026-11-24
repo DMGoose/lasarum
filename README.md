@@ -46,7 +46,7 @@ Translation and explanations use **nvidia/nemotron-3.5-lightning:free**, selecte
 
 ## Try the prototype
 
-Open **Library** to import your own article. Choose **Paste text**, **TXT file**, or **Webpage link**. Web links first produce an editable title/body preview; select **Save and open** to add the article and read it. Public static webpages are supported; for sign-in pages, blocked sites, or JavaScript-only content, paste the article text. TXT files must use UTF-8 and be at most 512 KB; each article may contain up to 100,000 characters. The library supports title/content search and restores the last opened article after refresh.
+Open **Library** to import your own article. Choose **Paste text**, **TXT file**, or **Webpage link**. Web links first produce an editable title/body preview; select **Save and open** to add the article and read it. Public static webpages are supported; for sign-in pages, blocked sites, or JavaScript-only content, paste the article text. TXT files must use UTF-8 and be at most 20 MB. Imports accept up to 5 million characters and are saved as chapter records, grouped as one book in the Library. Chapter headings are recognized where present; long sections split at paragraph or sentence boundaries. Each chapter has fixed reading pages, and Read page sends only the current page to speech. The library supports title/content search and restores the last opened article after refresh.
 
 Imported articles use the same word/phrase lookup, automatic Swedish pronunciation, vocabulary cards, and notes as the sample. Article playback splits long inputs into provider-sized requests and combines the PCM into a single seekable WAV; the audio becomes available once all segments finish generating. Longer articles take longer and use more OpenRouter credits.
 
@@ -72,7 +72,7 @@ Tests cover Swedish token offsets, phrase overlap, saved-note preservation, API 
 
 ## Scope and storage
 
-Articles, the last opened article, vocabulary, notes, and evaluation scores are stored in this browser's localStorage. Audio is cached on the server's disk. Vocabulary/evaluation JSON exports are available. Browser storage limits apply; a failed article save leaves the draft available to copy or shorten.
+Articles, chapters, reading pages, vocabulary, notes, and evaluation scores are stored in IndexedDB. Local device mode migrates the existing localStorage snapshot into IndexedDB while leaving the original snapshot untouched. Audio is cached on the server's disk. Vocabulary/evaluation JSON exports are available. Browser storage limits apply; a failed article save leaves the draft available to copy or shorten.
 
 The prototype now includes the original sample, a personal article Library, word/phrase interactions, expandable vocabulary cards, article playback, real API adapters, and a voice evaluation UI. EPUB parsing, saved scroll positions, synchronized highlighting, flashcard scheduling, and user accounts remain future work.
 

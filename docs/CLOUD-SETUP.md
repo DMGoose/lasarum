@@ -36,3 +36,9 @@ On the original localhost app, select **Export complete backup**. Keep that file
 `npm test` exercises real local PostgreSQL via PGlite, IndexedDB via fake-indexeddb, the two-device synchronization engine, backup merging, and both local/cloud API helpers. `npm run build` checks the production bundle. A real Google sign-in plus phone/iPad/desktop checks are still required after external configuration.
 
 Local first writes go to the account's IndexedDB snapshot and journal in one transaction. Cloud retries use idempotency receipts and record versions. Conflicting notes preserve both drafts until explicitly resolved. Deleted lookups retain tombstones. Realtime is a notification; focus/reconnect and periodic version checks recover missed changes. Export a complete backup before account changes or manual database work. Never clear browser data while changes remain pending.
+
+## Long text imports and page speech
+
+UTF-8 TXT imports allow 20 MB files and up to 5 million normalized characters. Long texts split into approximately 12,000-character chapter records, preserving explicit chapter headings where present. Chapter records remain below the existing cloud per-record limit, so no schema migration is needed. Library groups chapter records by bookId. Delete/restore applies to the entire book. Chapter selection, previous/next page controls, and reading progress work across devices. Each page contains complete sentences, normally up to 1,800 characters; an individual long sentence can occupy a larger page up to the lookup-context limit. Read page sends only those sentences to speech, and changing pages stops earlier playback.
+
+Local device mode stores snapshots in IndexedDB and preserves its original localStorage snapshot for recovery. Existing short articles and their vocabulary IDs remain intact. Backups include chapter metadata and per-chapter reading progress.
