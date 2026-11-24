@@ -117,16 +117,22 @@ document.addEventListener('input',event=>{
 function pageAudioOwner(){return `page:${currentDocument?.id||'sample'}:${currentPage}`;}
 $('#read-aloud').onclick=()=>speakInReader(pageSpeechText(sentences),pageAudioOwner());
 async function undoLookup(selection) {
- if(speechOwner===selection.id)stopReaderSpeech();
- lookupTracker.cancel(selection.id);
- pendingLookups.delete(selection.id);
+ const index=entries.findIndex(entry=>entry.id===selection.id),removed=index>=0?entries[index]:null,previousVisible=visible.filter(item=>item.id===selection.id);
+ if(speechOwner===selection.id||speechOwner===`vocab:${selection.id}`)stopReaderSpeech();
+ lookupTracker.cancel(selection.id);pendingLookups.delete(selection.id);vocabularyAI.delete(selection.id);
  ({entries,visible}=removeLookup(entries,visible,selection.id));
- await persist();updateCount();renderReader();
+ if(!await persist()){
+   if(removed&&!entries.some(entry=>entry.id===removed.id))entries.splice(Math.min(index,entries.length),0,removed);
+   for(const item of previousVisible)if(sentences.some(sentence=>sentence.id===item.sentenceId)&&!visible.some(current=>current.id===item.id))visible.push(item);
+   updateCount();renderReader();if(!$('#vocabulary-view').hidden)renderVocabulary();return false;
+ }
+ expandedWords.delete(selection.id);updateCount();renderReader();
  if(active?.id===selection.id){
    ++requestId;active=null;closeDetails();
-   $('#lookup-origin').textContent='Lookup removed';
-   $('#detail-content').innerHTML='<div class="empty-state">Translation and saved word removed. Click a word to look it up again.</div>';
+   $('#lookup-origin').textContent='Word details';
+   $('#detail-content').innerHTML='<div class="empty-detail">Select a word to translate.</div>';
  }
+ if(!$('#vocabulary-view').hidden)renderVocabulary();return true;
 }
 function openDetails() {
  $('.detail-panel').classList.add('is-open');
@@ -402,7 +408,7 @@ function renderVocabulary(){
  const query=$('#word-search').value.toLowerCase();const items=entries.filter(entry=>`${entry.text} ${entry.translation} ${entry.note}`.toLowerCase().includes(query));
  $('#vocabulary-list').innerHTML=items.length?items.map(entry=>{
    const expanded=expandedWords.has(entry.id),state=vocabularyAI.get(entry.id),busy=state?.pending;
-   return `<article class="vocab-card${expanded?' is-expanded':''}" data-entry="${escape(entry.id)}"><div class="vocab-card-heading"><button type="button" class="vocab-expand" data-expand="${escape(entry.id)}" aria-expanded="${expanded}" aria-controls="vocab-details-${escape(entry.id)}" aria-label="${expanded?'Collapse':'Expand'} ${escape(entry.text)}"><span class="vocab-word" lang="sv">${escape(entry.text)}</span><span class="vocab-chevron" aria-hidden="true">${expanded?'−':'+'}</span><span class="vocab-meaning">${escape(entry.translation)}</span></button><button type="button" class="pronounce-button" data-pronounce="${escape(entry.id)}" aria-label="Pronounce ${escape(entry.text)}" aria-pressed="false">${speakerIcon}</button></div><div class="vocab-card-meta"><span class="pill">${entry.source==='demo'?'Demo fixture':'OpenRouter AI'}</span>${entry.note?'<span class="note-indicator">Has a note</span>':''}</div><p class="context" lang="sv">${escape(entry.context)}</p><p data-vocab-audio-status="${escape(entry.id)}" class="audio-status" role="status" hidden></p><div class="vocab-details" id="vocab-details-${escape(entry.id)}" ${expanded?'':'hidden'}><div data-vocab-transport="${escape(entry.id)}" hidden>${transportMarkup()}</div><h4>SAVED EXPLANATION</h4><p class="grammar">${escape(entry.lemma)} · ${escape(entry.grammar)}</p><p>${escape(entry.explanation)}</p><h4>SWEDISH EXAMPLE</h4><p class="example" lang="sv">${escape(entry.example)}</p><div class="vocab-ai"><div class="vocab-ai-toolbar"><label>Explanation language<select data-vocab-language ${busy?'disabled':''}><option value="en" ${(entry.aiExplanation?.language||entry.language)!=='zh'?'selected':''}>English</option><option value="zh" ${(entry.aiExplanation?.language||entry.language)==='zh'?'selected':''}>中文</option></select></label><button type="button" data-ask-ai ${busy?'disabled':''}>${busy?'Asking AI…':state?.error?'Try AI again':'Ask AI'}</button></div><div class="vocab-ai-answer" aria-live="polite">${vocabularyAnswer(entry)}</div><p class="vocab-ai-status${state?.error?' error':''}" role="status">${escape(state?.error|| (busy?'Preparing an explanation and example…':''))}</p></div><label class="vocab-note-label">Your note<textarea data-vocab-note rows="3" placeholder="A memory, a connection, your own example…">${escape(entry.note)}</textarea></label><p class="save-state" data-vocab-note-state>Saved on this device</p></div></article>`;
+   return `<article class="vocab-card${expanded?' is-expanded':''}" data-entry="${escape(entry.id)}"><div class="vocab-card-heading"><button type="button" class="vocab-expand" data-expand="${escape(entry.id)}" aria-expanded="${expanded}" aria-controls="vocab-details-${escape(entry.id)}" aria-label="${expanded?'Collapse':'Expand'} ${escape(entry.text)}"><span class="vocab-word" lang="sv">${escape(entry.text)}</span><span class="vocab-chevron" aria-hidden="true">${expanded?'−':'+'}</span><span class="vocab-meaning">${escape(entry.translation)}</span></button><button type="button" class="pronounce-button" data-pronounce="${escape(entry.id)}" aria-label="Pronounce ${escape(entry.text)}" aria-pressed="false">${speakerIcon}</button><button type="button" class="delete-word-button" data-delete-word="${escape(entry.id)}" aria-label="Delete ${escape(entry.text)}" title="Delete word"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button></div><div class="vocab-card-meta"><span class="pill">${entry.source==='demo'?'Demo fixture':'OpenRouter AI'}</span>${entry.note?'<span class="note-indicator">Has a note</span>':''}</div><p class="context" lang="sv">${escape(entry.context)}</p><p data-vocab-audio-status="${escape(entry.id)}" class="audio-status" role="status" hidden></p><div class="vocab-details" id="vocab-details-${escape(entry.id)}" ${expanded?'':'hidden'}><div data-vocab-transport="${escape(entry.id)}" hidden>${transportMarkup()}</div><h4>SAVED EXPLANATION</h4><p class="grammar">${escape(entry.lemma)} · ${escape(entry.grammar)}</p><p>${escape(entry.explanation)}</p><h4>SWEDISH EXAMPLE</h4><p class="example" lang="sv">${escape(entry.example)}</p><div class="vocab-ai"><div class="vocab-ai-toolbar"><label>Explanation language<select data-vocab-language ${busy?'disabled':''}><option value="en" ${(entry.aiExplanation?.language||entry.language)!=='zh'?'selected':''}>English</option><option value="zh" ${(entry.aiExplanation?.language||entry.language)==='zh'?'selected':''}>中文</option></select></label><button type="button" data-ask-ai ${busy?'disabled':''}>${busy?'Asking AI…':state?.error?'Try AI again':'Ask AI'}</button></div><div class="vocab-ai-answer" aria-live="polite">${vocabularyAnswer(entry)}</div><p class="vocab-ai-status${state?.error?' error':''}" role="status">${escape(state?.error|| (busy?'Preparing an explanation and example…':''))}</p></div><label class="vocab-note-label">Your note<textarea data-vocab-note rows="3" placeholder="A memory, a connection, your own example…">${escape(entry.note)}</textarea></label><p class="save-state" data-vocab-note-state>Saved on this device</p></div></article>`;
  }).join(''):`<div class="empty-state">${entries.length?'No matching words.':'No saved words yet.'}</div>`;
  updateSpeechControls();
 }
@@ -438,6 +444,7 @@ async function askVocabularyAI(card) {
 $('#vocabulary-list').addEventListener('click',event=>{
  const card=event.target.closest('[data-entry]');if(!card)return;
  const entry=entries.find(item=>item.id===card.dataset.entry);if(!entry)return;
+ const deleteButton=event.target.closest('[data-delete-word]');if(deleteButton){deleteButton.disabled=true;void undoLookup(entry);return;}
  if(event.target.closest('[data-pronounce]')){void speakInReader(entry.text,`vocab:${entry.id}`,entry.context);return;}
  if(event.target.closest('[data-ask-ai]')){void askVocabularyAI(card);return;}
  if(event.target.closest('[data-expand]')||!event.target.closest('button,input,textarea,select,label,a,.vocab-details'))toggleVocabularyCard(card);
@@ -583,3 +590,4 @@ if(cloudEnabled){
  $('#local-mode-label').hidden=false;
  void(async()=>{try{const cached=await deviceDB.load('local-device');if(cached?.snapshot)applyCloudSnapshot(cached.snapshot,{preserveActive:false});else await deviceDB.save('local-device',{snapshot:snapshot()});}catch{toast('Could not open local storage. Export a backup before importing a long text.');}finally{$('#workspace').hidden=false;void loadConnection();}})();
 }
+
