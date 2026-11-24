@@ -8,7 +8,7 @@ export async function cloudRequest(action,data,signal){
  if(!response.ok){const result=await response.json().catch(()=>({}));throw new Error(result.error||'The cloud request failed.');}return response;
 }
 export async function speechResponse(data,signal,request=cloudRequest){
- const chunks=speechChunks(data.text),buffers=[];let total=0,cached=true,elapsed=0;
+ const chunks=speechChunks(data.text,700),buffers=[];let total=0,cached=true,elapsed=0;
  for(let i=0;i<chunks.length;i++){
    if(signal?.aborted)throw signal.reason||new DOMException('Cancelled','AbortError');
    let response;try{response=await request('speech',{...data,text:chunks[i]},signal);}catch(error){if(signal?.aborted)throw error;throw new Error(`Audio part ${i+1}/${chunks.length} failed: ${error.message} Retry to reuse completed parts.`);}

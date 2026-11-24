@@ -117,7 +117,7 @@ export function createApp({apiKey = process.env.OPENROUTER_API_KEY || '', textMo
            cached = false;
            audio = await once(digest,async()=>{
              const audioParts=[];let totalBytes=0;
-             for(const part of speechChunks(input)){
+             for(const part of speechChunks(input,700)){
              const response = await upstream('/audio/speech',{...payload,input:part});
              const type = (response.headers.get('content-type') || '').toLowerCase();
              if (!type.includes('audio/pcm') && !type.includes('audio/l16')) {await response.body?.cancel();throw error(502,'The provider returned an unexpected PCM audio format.');}

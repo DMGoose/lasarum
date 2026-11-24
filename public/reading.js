@@ -1,6 +1,6 @@
 import {cleanArticleText,articleSentences} from './library.js';
 export const CHAPTER_CHARS=12000;
-export const PAGE_CHARS=1800;
+export const PAGE_CHARS=700;
 export const MAX_TXT_BYTES=20*1024*1024;
 const heading=/^(?:#{1,3}\s+\S.*|(?:kapitel|chapter)\s+(?:\d+|[ivxlcdm]+)\b.*|第[一二三四五六七八九十百千万零〇\d]+[章节回部].*)$/iu;
 export function splitChapters(raw,max=CHAPTER_CHARS){
