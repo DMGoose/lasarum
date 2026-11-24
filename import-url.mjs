@@ -1,4 +1,5 @@
 import https from 'node:https';
+import {setTimeout,clearTimeout} from 'node:timers';
 import http from 'node:http';
 import {lookup} from 'node:dns/promises';
 import {isIP} from 'node:net';

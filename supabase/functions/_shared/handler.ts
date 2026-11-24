@@ -58,5 +58,5 @@ export function handler(action:string){return async(request:Request)=>{
      return new Response(wav,{headers:{...headers,'Content-Type':'audio/wav','X-Audio-Cache':hit?'hit':'miss','X-Elapsed-Ms':String(Math.round(performance.now()-start))}});
    }
    throw problem(404,'Unknown function.');
- }catch(error){const problem=error as Error&{status?:number};return json(problem.status||500,{error:problem.status?problem.message:'The cloud service could not complete this request. Please retry.'});}
+ }catch(error){const problem=error as Error&{status?:number};if(!problem.status)console.error('Cloud operation failed',{action,name:problem.name,message:problem.message});return json(problem.status||500,{error:problem.status?problem.message:'The cloud service could not complete this request. Please retry.'});}
 };}

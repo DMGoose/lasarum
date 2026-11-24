@@ -1,4 +1,6 @@
 import https from 'node:https';
+import {parseHTTPResponse} from './http-response.mjs';
+import {setTimeout,clearTimeout} from 'node:timers';
 import http from 'node:http';
 import {lookup} from 'node:dns/promises';
 import {isIP} from 'node:net';
@@ -16,7 +18,7 @@ export function webURL(value) {
  if(!['https:','http:'].includes(url.protocol)||url.username||url.password||!['','80','443'].includes(url.port))throw fail(400,'Use a public HTTP or HTTPS webpage without sign-in details or a custom port.');
  url.hash='';return url;
 }
-function download(url,address) {
+function downloadNode(url,address) {
  return new Promise((resolve,reject)=>{
    const request=(url.protocol==='https:'?https:http).get(url,{
      headers:{'User-Agent':'Lasrum-Article-Importer/1.0','Accept':'text/html,text/plain;q=0.9','Accept-Encoding':'identity'},
@@ -43,6 +45,30 @@ function download(url,address) {
    request.on('error',err=>reject(err.status?err:fail(502,'Could not reach this webpage. Paste its article text instead.')));
  });
 }
+// Edge's Node HTTP shim does not implement a custom DNS lookup callback.
+// Connect to the validated IP, then verify TLS against the original hostname.
+async function downloadEdge(url,address) {
+ let connection,expired=false,deadline;
+ const timeoutError=()=>fail(504,'The webpage took too long to respond. Paste its article text instead.');
+ const close=()=>{try{connection?.close();}catch{/* Already closed. */}};
+ const timeout=new Promise((_,reject)=>{deadline=setTimeout(()=>{expired=true;close();reject(timeoutError());},20000);});
+ const operation=(async()=>{
+   connection=await Deno.connect({hostname:address,port:url.protocol==='https:'?443:80});
+   if(expired){close();throw timeoutError();}
+   if(url.protocol==='https:')connection=await Deno.startTls(connection,{hostname:url.hostname.replace(/^\[|\]$/g,''),alpnProtocols:['http/1.1']});
+   if(expired){close();throw timeoutError();}
+   const request=new TextEncoder().encode(`GET ${url.pathname}${url.search} HTTP/1.1\r\nHost: ${url.host}\r\nUser-Agent: Lasrum-Article-Importer/1.0\r\nAccept: text/html,text/plain;q=0.9\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n`);
+   for(let sent=0;sent<request.length;){const written=await connection.write(request.subarray(sent));if(!written)throw fail(502,'The webpage connection closed.');sent+=written;}
+   const parts=[];let size=0;
+   while(true){const buffer=new Uint8Array(16384),count=await connection.read(buffer);if(count===null)break;if(!count)continue;size+=count;if(size>2*1024*1024+65536)throw fail(413,'This webpage is too large. Paste just the article text instead.');parts.push(buffer.subarray(0,count));}
+   const bytes=new Uint8Array(size);let at=0;for(const part of parts){bytes.set(part,at);at+=part.length;}
+   return parseHTTPResponse(bytes);
+ })();
+ try{return await Promise.race([operation,timeout]);}
+ catch(error){throw error.status?error:fail(502,'Could not reach this webpage. Paste its article text instead.');}
+ finally{clearTimeout(deadline);close();}
+}
+const download=typeof Deno==='undefined'?downloadNode:downloadEdge;
 export async function fetchPublicArticle(value,{resolveDNS=lookup,downloadPage=download}={}) {
  let url=webURL(value);
  for(let redirects=0;redirects<=4;redirects++){
