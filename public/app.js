@@ -567,7 +567,7 @@ $('#cancel-backup').onclick=()=>{$('#backup-preview').hidden=true;backupDraft=nu
 $('#confirm-backup').onclick=async()=>{if(!backupDraft)return;const merged=mergeBackup(snapshot(),backupDraft);entries=merged.entries;library=merged.library;if(!currentDocument&&merged.currentDocumentId)currentDocument=library.find(item=>item.id===merged.currentDocumentId&&!item.deletedAt)||null;if(await persist()){$('#backup-preview').hidden=true;backupDraft=null;applyCloudSnapshot(snapshot());toast('Backup imported. Your original file is unchanged.');}};
 let progressTimer;
 window.addEventListener('scroll',()=>{
- if(applyingRemote||$('#reader-view').hidden||(cloudEnabled&&!cloudRuntime?.user))return;
+ if(applyingRemote||$('#workspace').hidden||$('#reader-view').hidden||(cloudEnabled&&!cloudRuntime?.user))return;
  clearTimeout(progressTimer);progressTimer=setTimeout(()=>{const sentence=$$('.sentence').find(el=>el.getBoundingClientRect().bottom>120);if(sentence){readingProgress[currentDocument?.id||'sample']={sentenceId:sentence.dataset.sentence,pageIndex:currentPage};void persist();}},1000);
 },{passive:true});
 lastAppSnapshot=snapshot();
@@ -575,7 +575,7 @@ if(cloudEnabled){
  $('#account-controls').hidden=false;$('#local-mode-label').hidden=true;$('.backup-menu>summary').textContent='Account';
  cloudRuntime=new CloudRuntime({onSnapshot:applyCloudSnapshot,onStatus:syncStatus,onAccess:(user,message)=>{
    $('#workspace').hidden=!user;$('#auth-gate').hidden=!!user;$('#sign-out').hidden=!user;$('#sync-now').hidden=!user;$('#export-backup').disabled=!user;$('#import-backup').disabled=!user;$('#account-email').textContent=user?.email||'';$('#auth-message').textContent=message||'Sign in with the Google account approved for your private reading room.';
-   if(!user){stopReaderSpeech();++requestId;for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();backupDraft=null;$('#backup-preview').hidden=true;$('#backup-summary').textContent='';$('#sync-conflicts').replaceChildren();$('#conflict-panel').hidden=true;$('#sync-state').textContent='Sign in to sync';expandedWords.clear();vocabularyAI.clear();entries=[];library=[];evaluation=emptySnapshot().evaluation;readingProgress={};currentDocument=null;readerPages=paginateSentences(sampleSentences);currentPage=0;sentences=readerPages[0];visible=[];active=null;renderReader();updateCount();$('#vocabulary-list').replaceChildren();$('#library-list').replaceChildren();config={};lastAppSnapshot=snapshot();}
+   if(!user){stopReaderSpeech();++requestId;for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();backupDraft=null;$('#backup-preview').hidden=true;$('#backup-summary').textContent='';$('#sync-conflicts').replaceChildren();$('#conflict-panel').hidden=true;$('#sync-state').textContent='Sign in to sync';expandedWords.clear();vocabularyAI.clear();entries=[];library=[];evaluation=emptySnapshot().evaluation;readingProgress={};currentDocument=null;readerPages=paginateSentences(sampleSentences);currentPage=0;sentences=readerPages[0];visible=[];active=null;articleMetadata();renderReader();updateCount();$('#vocabulary-list').replaceChildren();$('#library-list').replaceChildren();config={};lastAppSnapshot=snapshot();}
    else void loadConnection();
  }});
  void cloudRuntime.start().catch(error=>$('#auth-message').textContent=error.message);
@@ -583,4 +583,3 @@ if(cloudEnabled){
  $('#local-mode-label').hidden=false;
  void(async()=>{try{const cached=await deviceDB.load('local-device');if(cached?.snapshot)applyCloudSnapshot(cached.snapshot,{preserveActive:false});else await deviceDB.save('local-device',{snapshot:snapshot()});}catch{toast('Could not open local storage. Export a backup before importing a long text.');}finally{$('#workspace').hidden=false;void loadConnection();}})();
 }
-
