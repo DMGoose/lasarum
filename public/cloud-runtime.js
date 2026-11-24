@@ -24,12 +24,13 @@ export class CloudRuntime{
      if(generation!==this.generation)return;
      if(error)throw error;if(!data)throw new Error('This Google account is not approved for this private app.');
      this.user=session.user;
-     this.engine=new SyncEngine({account:this.user.id,remote:supabaseRemote(this.client),onSnapshot:snapshot=>{if(generation===this.generation)this.onSnapshot(snapshot);},onStatus:status=>{if(generation===this.generation)this.onStatus(status);}});
+     let restoring=true;
+     this.engine=new SyncEngine({account:this.user.id,remote:supabaseRemote(this.client),onSnapshot:snapshot=>{if(generation===this.generation)this.onSnapshot(snapshot,{preserveActive:!restoring});},onStatus:status=>{if(generation===this.generation)this.onStatus(status);}});
      await this.engine.start();if(generation!==this.generation)return;this.onAccess(this.user);
      this.channel=this.client.channel(`account-${this.user.id}`);
      for(const table of ['articles','vocabulary','reading_progress','user_settings'])this.channel.on('postgres_changes',{event:'*',schema:'public',table,filter:`owner_id=eq.${this.user.id}`},()=>{clearTimeout(this.refreshTimer);this.refreshTimer=setTimeout(()=>this.engine?.sync(),100);});
      this.channel.subscribe(status=>{if(status==='SUBSCRIBED')this.engine?.sync();});
-     await this.engine.sync();
+     await this.engine.sync();restoring=false;
    }catch(error){if(generation===this.generation){this.user=null;this.onAccess(null,error.message);}}
  }
  async login(){const redirectTo=new URL(import.meta.env.BASE_URL||'./',location.href);redirectTo.search='';redirectTo.hash='';const {error}=await this.client.auth.signInWithOAuth({provider:'google',options:{redirectTo:redirectTo.href}});if(error)throw error;}
