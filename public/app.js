@@ -31,6 +31,7 @@ function audioTime(seconds,precise=false) {const value=Math.max(0,seconds||0),wh
 function updateTransport() {
  const duration=Number.isFinite(readerAudio.duration)?readerAudio.duration:0,time=readerAudio.currentTime||0,ready=!!speechURL&&duration>0;
  const precise=duration>0&&duration<10;
+ $('#reader-transport').hidden=!ready;
  $$('[data-reader-seek]').forEach(slider=>{slider.disabled=!ready;slider.max=String(duration);slider.value=String(time);slider.setAttribute('aria-valuetext',`${audioTime(time,precise)} of ${audioTime(duration,precise)}`);});
  $$('[data-reader-time]').forEach(label=>label.textContent=`${audioTime(time,precise)} / ${audioTime(duration,precise)}`);
  $$('[data-reader-toggle]').forEach(button=>{button.disabled=!ready;button.textContent=readerAudio.paused?'▶ Play':'Ⅱ Pause';button.setAttribute('aria-label',readerAudio.paused?'Play audio':'Pause audio');});
@@ -173,7 +174,7 @@ function setReaderArticle(document) {
  for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();
  currentDocument=document;sentences=document?articleSentences(document.text,document.id):sampleSentences;
  visible=[];active=null;anchor=null;returnFocus=null;
- $('#lookup-origin').textContent='Word details';$('#detail-content').innerHTML='<div class="empty-detail"><h3>Follow your curiosity.</h3><p>Click a word in this article to translate it and hear its Swedish pronunciation.</p></div>';
+ $('#lookup-origin').textContent='Word details';$('#detail-content').innerHTML='<div class="empty-detail"><p>Select a word to translate.</p></div>';
  articleMetadata();setMode(false);
 }
 async function openArticle(document) {setReaderArticle(document);await persist();showView('reader');window.scrollTo({top:0,behavior:'instant'});const progress=readingProgress[document?.id||'sample'];if(progress?.sentenceId)requestAnimationFrame(()=>[...document.querySelectorAll('.sentence')].find(el=>el.dataset.sentence===progress.sentenceId)?.scrollIntoView({block:'start'}));}
@@ -182,9 +183,9 @@ function renderLibrary() {
  const query=$('#library-search').value.trim().toLowerCase();
  const documents=library.filter(item=>!!item.deletedAt===showDeletedArticles&&`${item.title} ${item.text} ${item.sourceUrl||''}`.toLowerCase().includes(query));
  const count=library.filter(item=>!item.deletedAt).length,deleted=library.length-count;
- $('#library-count').textContent=`${count} saved ${count===1?'article':'articles'} · stored on this device`;
+ $('#library-count').textContent=`${count} saved ${count===1?'article':'articles'}`;
  $('#show-deleted').textContent=showDeletedArticles?'← Back to articles':`Recently deleted (${deleted})`;$('#show-deleted').setAttribute('aria-pressed',String(showDeletedArticles));
- $('#library-list').innerHTML=documents.length?documents.map(item=>`<article class="library-card"><div class="library-card-header"><span class="pill">${item.sourceType==='txt'?'TXT':item.sourceType==='url'?'Webpage':'Pasted text'}</span>${item.deletedAt?'':`<button type="button" class="delete-article" data-delete-document="${escape(item.id)}" aria-label="Delete ${escape(item.title)}" title="Delete article"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button>`}</div><h3>${escape(item.title)}</h3><p class="library-excerpt">${escape(item.text.slice(0,180))}${item.text.length>180?'…':''}</p><p class="source-note">${escape(item.sourceUrl?new URL(item.sourceUrl).hostname:'Your own text')} · ${new Date(item.createdAt).toLocaleDateString()}</p>${item.deletedAt?`<button type="button" data-restore-document="${escape(item.id)}">Restore article</button>`:`<button type="button" data-read-document="${escape(item.id)}">Open in Read →</button>`}</article>`).join(''):`<div class="empty-state">${query?'No matching articles.':showDeletedArticles?'No recently deleted articles.':'Your Library is ready for its first article. Upload a TXT file, paste some text, or import a webpage.'}</div>`;
+ $('#library-list').innerHTML=documents.length?documents.map(item=>`<article class="library-card"><div class="library-card-header"><span class="pill">${item.sourceType==='txt'?'TXT':item.sourceType==='url'?'Webpage':'Pasted text'}</span>${item.deletedAt?'':`<button type="button" class="delete-article" data-delete-document="${escape(item.id)}" aria-label="Delete ${escape(item.title)}" title="Delete article"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button>`}</div><h3>${escape(item.title)}</h3><p class="library-excerpt">${escape(item.text.slice(0,180))}${item.text.length>180?'…':''}</p><p class="source-note">${escape(item.sourceUrl?new URL(item.sourceUrl).hostname:'Your own text')} · ${new Date(item.createdAt).toLocaleDateString()}</p>${item.deletedAt?`<button type="button" data-restore-document="${escape(item.id)}">Restore article</button>`:`<button type="button" data-read-document="${escape(item.id)}">Open in Read →</button>`}</article>`).join(''):`<div class="empty-state">${query?'No matching articles.':showDeletedArticles?'No recently deleted articles.':'No articles yet.'}</div>`;
 }
 $('#show-deleted').onclick=()=>{showDeletedArticles=!showDeletedArticles;renderLibrary();};
 $('#library-list').addEventListener('click',async event=>{
@@ -240,7 +241,7 @@ $('#import-form').onsubmit=async event=>{
    const title=($('#import-title').value.trim()||text.split('\n')[0].slice(0,80)).slice(0,200);
    const document={id,title,text,sourceType,sourceUrl:sourceType==='url'?importedURL:null,createdAt:new Date().toISOString()};
    library.unshift(document);if(!await persist()){library.shift();throw new Error('The article could not be saved. Free some browser storage or import a shorter text.');}
-   $('#import-form').reset();importedURL=null;++libraryDraftVersion;$('#import-method').onchange();$('#import-body').value='';importStatus('');
+   $('#import-form').reset();$('.import-tools').open=false;importedURL=null;++libraryDraftVersion;$('#import-method').onchange();$('#import-body').value='';importStatus('');
    openArticle(document);
  }catch(err){importStatus(err.message,true);}
 };
@@ -249,7 +250,6 @@ function showView(view) {
  closeDetails();
  $$('.view').forEach(el=>el.hidden=el.id!==`${view}-view`);
  $$('.nav').forEach(el=>{el.classList.toggle('active',el.dataset.view===view);if(el.dataset.view===view)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');});
- $('#view-title').textContent = {reader:'Make yourself at home in a language.',library:'Your next page begins here.',vocabulary:'Small discoveries. Lasting understanding.',voices:'Find the sound of your Swedish.'}[view];
  if(view==='vocabulary')renderVocabulary();
  if(view==='library')renderLibrary();
 }
@@ -275,7 +275,7 @@ function renderReader() {
  $('#reading-text').innerHTML=html+'</p>';
  if(focusTarget)document.querySelector(focusTarget)?.focus({preventScroll:true});
 }
-function setMode(value){phrase=value;anchor=null;$('#word-mode').classList.toggle('selected',!value);$('#phrase-mode').classList.toggle('selected',value);$('#word-mode').setAttribute('aria-pressed',String(!value));$('#phrase-mode').setAttribute('aria-pressed',String(value));$('#selection-hint').textContent=value?'Choose the first and last word in one sentence. You can also drag to select a phrase.':'Click words independently to keep multiple translations visible. Drag across a phrase to translate it together.';renderReader();}
+function setMode(value){phrase=value;anchor=null;$('#word-mode').classList.toggle('selected',!value);$('#phrase-mode').classList.toggle('selected',value);$('#word-mode').setAttribute('aria-pressed',String(!value));$('#phrase-mode').setAttribute('aria-pressed',String(value));$('#selection-hint').textContent=value?'Choose the first and last word in one sentence. You can also drag to select a phrase.':'Tap to translate and hear a word. Tap again to undo.';renderReader();}
 $('#word-mode').onclick=()=>setMode(false);$('#phrase-mode').onclick=()=>setMode(true);
 $('#clear').onclick=()=>{visible=[];anchor=null;renderReader();toast('Translations cleared. Your saved words are still available.');};
 $('#font-size').onclick=()=>$('#reading-text').classList.toggle('large');
@@ -371,7 +371,7 @@ function renderVocabulary(){
  $('#vocabulary-list').innerHTML=items.length?items.map(entry=>{
    const expanded=expandedWords.has(entry.id),state=vocabularyAI.get(entry.id),busy=state?.pending;
    return `<article class="vocab-card${expanded?' is-expanded':''}" data-entry="${escape(entry.id)}"><div class="vocab-card-heading"><button type="button" class="vocab-expand" data-expand="${escape(entry.id)}" aria-expanded="${expanded}" aria-controls="vocab-details-${escape(entry.id)}" aria-label="${expanded?'Collapse':'Expand'} ${escape(entry.text)}"><span class="vocab-word" lang="sv">${escape(entry.text)}</span><span class="vocab-chevron" aria-hidden="true">${expanded?'−':'+'}</span><span class="vocab-meaning">${escape(entry.translation)}</span></button><button type="button" class="pronounce-button" data-pronounce="${escape(entry.id)}" aria-label="Pronounce ${escape(entry.text)}" aria-pressed="false">${speakerIcon}</button></div><div class="vocab-card-meta"><span class="pill">${entry.source==='demo'?'Demo fixture':'OpenRouter AI'}</span>${entry.note?'<span class="note-indicator">Has a note</span>':''}</div><p class="context" lang="sv">${escape(entry.context)}</p><p data-vocab-audio-status="${escape(entry.id)}" class="audio-status" role="status" hidden></p><div class="vocab-details" id="vocab-details-${escape(entry.id)}" ${expanded?'':'hidden'}><div data-vocab-transport="${escape(entry.id)}" hidden>${transportMarkup()}</div><h4>SAVED EXPLANATION</h4><p class="grammar">${escape(entry.lemma)} · ${escape(entry.grammar)}</p><p>${escape(entry.explanation)}</p><h4>SWEDISH EXAMPLE</h4><p class="example" lang="sv">${escape(entry.example)}</p><div class="vocab-ai"><div class="vocab-ai-toolbar"><label>Explanation language<select data-vocab-language ${busy?'disabled':''}><option value="en" ${(entry.aiExplanation?.language||entry.language)!=='zh'?'selected':''}>English</option><option value="zh" ${(entry.aiExplanation?.language||entry.language)==='zh'?'selected':''}>中文</option></select></label><button type="button" data-ask-ai ${busy?'disabled':''}>${busy?'Asking AI…':state?.error?'Try AI again':'Ask AI'}</button></div><div class="vocab-ai-answer" aria-live="polite">${vocabularyAnswer(entry)}</div><p class="vocab-ai-status${state?.error?' error':''}" role="status">${escape(state?.error|| (busy?'Preparing an explanation and example…':''))}</p></div><label class="vocab-note-label">Your note<textarea data-vocab-note rows="3" placeholder="A memory, a connection, your own example…">${escape(entry.note)}</textarea></label><p class="save-state" data-vocab-note-state>Saved on this device</p></div></article>`;
- }).join(''):`<div class="empty-state">${entries.length?'No matching words.':'Your collection begins with a word. Open Read and explore the story.'}</div>`;
+ }).join(''):`<div class="empty-state">${entries.length?'No matching words.':'No saved words yet.'}</div>`;
  updateSpeechControls();
 }
 function toggleVocabularyCard(card) {
@@ -471,8 +471,17 @@ $('#load-voices').onclick=async()=>{
 };
 articleMetadata();renderReader();updateCount();
 async function loadConnection(){
- try{const response=cloudEnabled?await cloudRequest('app-config'):await fetch('/api/config');config=await response.json();$('#connection-state').textContent=config.configured?'OpenRouter ready':'AI key not configured';$('.connection').classList.toggle('ready',config.configured);$('#voice-notice').textContent=config.configured?'Swedish audio is ready. Generate a sample to compare voices.':'Configure the server’s OpenRouter key to enable AI translation and speech.';candidates.forEach(c=>$(`#generate-${c.id}`).disabled=!config.configured);}
- catch{$('#connection-state').textContent=cloudEnabled?'Sign in to use cloud AI':'Local server unavailable';}
+ try{
+   const response=cloudEnabled?await cloudRequest('app-config'):await fetch('/api/config');
+   if(!response.ok)throw new Error('AI connection unavailable.');
+   config=await response.json();
+   $('#voice-notice').hidden=!!config.configured;
+   $('#voice-notice').textContent=config.configured?'':'AI key not configured.';
+   candidates.forEach(c=>$(`#generate-${c.id}`).disabled=!config.configured);
+ }catch{
+   $('#voice-notice').hidden=false;
+   $('#voice-notice').textContent='AI connection unavailable. Retry or check configuration.';
+ }
 }
 let noteTimer;
 function scheduleNoteSave(label){
@@ -530,7 +539,7 @@ window.addEventListener('scroll',()=>{
 },{passive:true});
 lastAppSnapshot=snapshot();
 if(cloudEnabled){
- $('#account-controls').hidden=false;$('#local-mode-label').hidden=true;$('.phase-label').textContent='YOUR PRIVATE READING ROOM';$('#storage-description').textContent='Private account · Cross-device sync';
+ $('#account-controls').hidden=false;$('#local-mode-label').hidden=true;$('.backup-menu>summary').textContent='Account';
  cloudRuntime=new CloudRuntime({onSnapshot:applyCloudSnapshot,onStatus:syncStatus,onAccess:(user,message)=>{
    $('#workspace').hidden=!user;$('#auth-gate').hidden=!!user;$('#sign-out').hidden=!user;$('#sync-now').hidden=!user;$('#export-backup').disabled=!user;$('#import-backup').disabled=!user;$('#account-email').textContent=user?.email||'';$('#auth-message').textContent=message||'Sign in with the Google account approved for your private reading room.';
    if(!user){stopReaderSpeech();++requestId;for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();backupDraft=null;$('#backup-preview').hidden=true;$('#backup-summary').textContent='';$('#sync-conflicts').replaceChildren();$('#conflict-panel').hidden=true;$('#sync-state').textContent='Sign in to sync';expandedWords.clear();vocabularyAI.clear();entries=[];library=[];evaluation=emptySnapshot().evaluation;readingProgress={};currentDocument=null;sentences=sampleSentences;visible=[];active=null;renderReader();updateCount();$('#vocabulary-list').replaceChildren();$('#library-list').replaceChildren();config={};lastAppSnapshot=snapshot();}
