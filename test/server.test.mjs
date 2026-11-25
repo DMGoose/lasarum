@@ -48,7 +48,7 @@ test('speech uses selected Gemini model, returns WAV, and reuses cache by voice 
  const app=await setup(t,{apiKey:'test-key',request:async(url,options)=>{
    calls++;assert.equal(url,'https://openrouter.ai/api/v1/audio/speech');const payload=JSON.parse(options.body);
    assert.equal(payload.model,'google/gemini-2.5-flash-tts');assert.equal(payload.response_format,'pcm');
-   assert.match(payload.instructions,/Language: Swedish \(sv-SE\), NOT English/);
+   assert.match(payload.instructions,/Språk: svenska \(sv-SE\)/);
    assert.match(payload.instructions,/enstaka ord och korta fraser/);
    assert.match(payload.instructions,/Använd aldrig engelskt uttal eller engelsk accent/);
    return new Response(Buffer.alloc(4800),{headers:{'Content-Type':'audio/pcm;rate=24000'}});
@@ -73,7 +73,7 @@ test('isolated Swedish homographs use sentence context without reading the conte
  const data={model:'google/gemini-2.5-flash-tts',voice:'Kore',text:'glass',context:'Jag äter glass.'};
  assert.equal((await app.post('/api/speech',data)).status,200);
  assert.equal(payloads[0].input,'glass');
- assert.match(payloads[0].instructions,/Language: Swedish \(sv-SE\), NOT English/);
+ assert.match(payloads[0].instructions,/Språk: svenska \(sv-SE\)/);
  assert.match(payloads[0].instructions,/Läs INTE upp kontextmeningen: "Jag äter glass\."/);
  await app.post('/api/speech',data);assert.equal(payloads.length,1);
  await app.post('/api/speech',{...data,context:'Hon köper glass.'});assert.equal(payloads.length,2);

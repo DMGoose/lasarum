@@ -12,7 +12,7 @@ export class AudioCache{
  }
  async key(data,account){
    const normalized=value=>String(value||'').normalize('NFC').trim().replace(/\s+/gu,' ');
-   const input=JSON.stringify(['swedish-sv-SE-context-v1',account,data.model,data.voice,normalized(data.text),normalized(data.context)]);
+   const input=JSON.stringify(['swedish-sv-SE-context-v2',account,data.model,data.voice,normalized(data.text),normalized(data.context)]);
    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(input));
    return Array.from(new Uint8Array(digest),value=>value.toString(16).padStart(2,'0')).join('');
  }

@@ -61,8 +61,9 @@ function updateSpeechControls(message) {
    }else button.textContent=selected&&speechState==='loading'?'Cancel audio':selected&&speechState==='playing'?'Ⅱ Pause':selected&&speechState==='paused'?'▶ Resume':`▶ ${label}`;
    button.setAttribute('aria-pressed',String(selected&&['loading','playing'].includes(speechState)));
  }
- $('#reader-audio-status').textContent=speechOwner===pageAudioOwner()?speechMessage:'';
- $$('[data-word-audio-status]').forEach(label=>label.textContent=speechOwner===active?.id?speechMessage:'');
+ const audioError=/^(Audio unavailable:|Could not play audio|Playback was blocked)/.test(speechMessage)?speechMessage:'';
+ $('#reader-audio-status').textContent=speechOwner===pageAudioOwner()?audioError:'';
+ $$('[data-word-audio-status]').forEach(label=>label.textContent=speechOwner===active?.id?audioError:'');
  $$('[data-pronounce]').forEach(button=>{
    const entry=entries.find(item=>item.id===button.dataset.pronounce),selected=speechOwner===`vocab:${entry?.id}`;
    const loading=selected&&speechState==='loading',playing=selected&&speechState==='playing';
@@ -70,7 +71,7 @@ function updateSpeechControls(message) {
    button.setAttribute('aria-label',`${loading?'Cancel pronunciation for':playing?'Pause pronunciation for':'Pronounce'} ${entry?.text||''}`);
    button.setAttribute('aria-pressed',String(loading||playing));
  });
- $$('[data-vocab-audio-status]').forEach(label=>{const selected=speechOwner===`vocab:${label.dataset.vocabAudioStatus}`;label.hidden=!selected||!speechMessage;label.textContent=selected?speechMessage:'';});
+ $$('[data-vocab-audio-status]').forEach(label=>{const selected=speechOwner===`vocab:${label.dataset.vocabAudioStatus}`;label.hidden=!selected||!audioError;label.textContent=selected?audioError:'';});
  updateTransport();
 }
 function stopReaderSpeech() {
@@ -102,7 +103,7 @@ async function speakInReader(text,owner,context) {
  finally{if(generation===speechGeneration)speechRequest=null;}
 }
 readerAudio.onplay=()=>{speechState='playing';$$('#voice-candidates audio').forEach(audio=>audio.pause());updateSpeechControls('Playing in Swedish.');};
-readerAudio.onended=()=>{speechState='ready';updateSpeechControls('Finished. Tap Play to listen again.');};
+readerAudio.onended=()=>{speechState='ready';updateSpeechControls('');};
 readerAudio.onpause=()=>{if(speechURL&&!readerAudio.ended){speechState='paused';updateSpeechControls('Paused.');}};
 for(const event of ['loadedmetadata','durationchange','timeupdate','seeked','ratechange'])readerAudio.addEventListener(event,updateTransport);
 readerAudio.onerror=()=>{if(speechURL){stopReaderSpeech();updateSpeechControls('Could not play audio. Tap Play to retry.');}};
