@@ -6,10 +6,14 @@ import {cloudRequest,speechResponse} from './cloud-api.js';
 import {emptySnapshot,validateBackup,mergeBackup} from './sync-core.js';
 import {importDocuments,splitChapters,paginateSentences,restoredPage,pageSpeechText,libraryGroups,MAX_TXT_BYTES} from './reading.js';
 import {LocalDatabase} from './local-db.js';
+import {LocalDictionary,dictionaryMetadata} from './dictionary.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const escape = text => String(text ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const STORAGE = 'lasrum.phase0.v1';
+const dictionary=new LocalDictionary();
+const dictionaryAccount=()=>cloudEnabled?(cloudRuntime?.user?.id||'signed-out'):'local-device';
+function entrySource(entry){return entry.source==='dictionary'?'Local dictionary':entry.source==='demo'?'Demo fixture':entry.cacheHit?'Cached AI':'OpenRouter AI';}
 let saved = {};
 try { if(!cloudEnabled)saved = JSON.parse(localStorage.getItem(STORAGE) || '{}'); } catch { /* Recover with an empty prototype state. */ }
 let entries = Array.isArray(saved.entries) ? saved.entries : [], evaluation = saved.evaluation || {results:[],preferred:'',notes:''};
@@ -26,7 +30,7 @@ let dragStart = null, suppressClick = false;
 const lookupTracker = createLookupTracker(), pendingLookups = new Map();
 const expandedWords = new Set(), vocabularyAI = new Map();
 const speakerIcon='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg>';
-const microphoneIcon='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></svg>';
+
 const readerAudio = $('#reader-audio');
 let speechGeneration=0, speechRequest=null, speechURL=null, speechOwner=null, speechState='idle', speechMessage='', readerSpeed=1;
 function transportMarkup() {
@@ -36,7 +40,7 @@ function audioTime(seconds,precise=false) {const value=Math.max(0,seconds||0),wh
 function updateTransport() {
  const duration=Number.isFinite(readerAudio.duration)?readerAudio.duration:0,time=readerAudio.currentTime||0,ready=!!speechURL&&duration>0;
  const precise=duration>0&&duration<10;
- $('#reader-transport').hidden=!ready;
+ $('#reader-transport').hidden=!ready||speechOwner!==pageAudioOwner();
  $$('[data-reader-seek]').forEach(slider=>{slider.disabled=!ready;slider.max=String(duration);slider.value=String(time);slider.setAttribute('aria-valuetext',`${audioTime(time,precise)} of ${audioTime(duration,precise)}`);});
  $$('[data-reader-time]').forEach(label=>label.textContent=`${audioTime(time,precise)} / ${audioTime(duration,precise)}`);
  $$('[data-reader-toggle]').forEach(button=>{button.disabled=!ready;button.textContent=readerAudio.paused?'▶ Play':'Ⅱ Pause';button.setAttribute('aria-label',readerAudio.paused?'Play audio':'Pause audio');});
@@ -49,13 +53,13 @@ function updateSpeechControls(message) {
    const button=$(selector);if(!button)continue;
    const selected=speechOwner===owner;
    if(selector==='#play-word'){
-     button.innerHTML=microphoneIcon;
+     button.innerHTML=speakerIcon;
      const action=selected&&speechState==='loading'?'Cancel pronunciation for':selected&&speechState==='playing'?'Pause pronunciation for':'Pronounce';
      button.setAttribute('aria-label',`${action} ${active?.text||'word'}`);button.title=`${action} ${active?.text||'word'}`;
    }else button.textContent=selected&&speechState==='loading'?'Cancel audio':selected&&speechState==='playing'?'Ⅱ Pause':selected&&speechState==='paused'?'▶ Resume':`▶ ${label}`;
    button.setAttribute('aria-pressed',String(selected&&['loading','playing'].includes(speechState)));
  }
- $('#reader-audio-status').textContent=speechMessage;
+ $('#reader-audio-status').textContent=speechOwner===pageAudioOwner()?speechMessage:'';
  $$('[data-word-audio-status]').forEach(label=>label.textContent=speechOwner===active?.id?speechMessage:'');
  $$('[data-pronounce]').forEach(button=>{
    const entry=entries.find(item=>item.id===button.dataset.pronounce),selected=speechOwner===`vocab:${entry?.id}`;
@@ -65,7 +69,6 @@ function updateSpeechControls(message) {
    button.setAttribute('aria-pressed',String(loading||playing));
  });
  $$('[data-vocab-audio-status]').forEach(label=>{const selected=speechOwner===`vocab:${label.dataset.vocabAudioStatus}`;label.hidden=!selected||!speechMessage;label.textContent=selected?speechMessage:'';});
- $$('[data-vocab-transport]').forEach(panel=>panel.hidden=speechOwner!==`vocab:${panel.dataset.vocabTransport}`);
  updateTransport();
 }
 function stopReaderSpeech() {
@@ -91,7 +94,7 @@ async function speakInReader(text,owner,context) {
    const voice=evaluation.preferredConfiguration?.voice||'Kore';
    const response=await api('/api/speech',{model:'google/gemini-2.5-flash-tts',voice,text,context},speechRequest.signal);
    const blob=await response.blob();if(generation!==speechGeneration)return;
-   speechURL=URL.createObjectURL(blob);readerAudio.src=speechURL;readerAudio.playbackRate=readerSpeed;speechState='ready';
+   speechURL=URL.createObjectURL(blob);readerAudio.src=speechURL;readerAudio.playbackRate=owner===pageAudioOwner()?readerSpeed:1;speechState='ready';
    updateSpeechControls('Audio ready.');
    try{await readerAudio.play();}catch{if(generation===speechGeneration)updateSpeechControls('Audio ready. Tap Play to listen.');}
  }catch(err){if(generation===speechGeneration){speechState='idle';updateSpeechControls(`Audio unavailable: ${err.message}`);}}
@@ -368,32 +371,31 @@ async function lookup(selection, force=false){
  const id=++requestId;active=selection;
  const token=lookupTracker.begin(selection.id);pendingLookups.set(selection.id,selection);
  openDetails();
- const language='en',mode='live';
- $('#lookup-origin').textContent='OpenRouter AI';
+ const language='en',account=dictionaryAccount();
+ $('#lookup-origin').textContent=force?'OpenRouter AI':'Local dictionary';
  $('#detail-content').innerHTML=`<div class="loading">Looking up <strong>${escape(selection.text)}</strong>…</div>`;
  try{
-   let result=entries.find(item=>item.id===selection.id&&item.language===language&&item.source===mode);
-   if(!result||force){
-       if(!config.configured)throw new Error('OpenRouter is not configured. Add the key to the server’s .env file and restart.');
-       result=await (await api('/api/lookup',{text:selection.text,context:selection.context,language,refresh:force})).json();
-   }
+   const result=await dictionary.resolve(selection,{language,account,force,existing:entries.find(item=>item.id===selection.id),fetchAI:async()=>{
+     if(!config.configured)throw new Error('No local dictionary entry. Configure OpenRouter to use AI lookup.');
+     return (await api('/api/lookup',{text:selection.text,context:selection.context,language,refresh:force})).json();
+   }});
    if(!lookupTracker.isCurrent(selection.id,token))return;
    const entry={...selection,...result,id:selection.id,language,documentId:currentDocument?.id||'sample',documentTitle:currentDocument?.title||'En sida i taget'};
    entries=upsertEntry(entries,entry);await persist();updateCount();
    visible=addVisible(visible,{...selection,translation:result.translation});renderReader();
    if(id===requestId){renderDetail(entries.find(item=>item.id===selection.id));void speakInReader(selection.text,selection.id,selection.context);}
- }catch(err){if(id===requestId&&lookupTracker.isCurrent(selection.id,token)){$('#detail-content').innerHTML=`<div class="detail"><h3>${escape(selection.text)}</h3><p class="error">${escape(err.message)}</p><button id="retry-lookup">Try again</button></div>`;$('#retry-lookup').onclick=()=>lookup(selection,true);}}
+ }catch(err){if(id===requestId&&lookupTracker.isCurrent(selection.id,token)){$('#detail-content').innerHTML=`<div class="detail"><h3>${escape(selection.text)}</h3><p class="error">${escape(err.message)}</p><button id="retry-lookup">Try again</button></div>`;$('#retry-lookup').onclick=()=>lookup(selection,force);}}
  finally{if(lookupTracker.isCurrent(selection.id,token))pendingLookups.delete(selection.id);}
 }
 function renderDetail(entry){
- active=entry;$('#lookup-origin').textContent=entry.source==='demo'?'Demo fixture':'OpenRouter AI';
+ active=entry;$('#lookup-origin').textContent=entrySource(entry);
  openDetails();
- $('#detail-content').innerHTML=`<div class="detail"><h3 lang="sv">${escape(entry.text)}</h3><p class="translation">${escape(entry.translation)}</p><p class="grammar">${escape(entry.lemma)} · ${escape(entry.grammar)}</p><blockquote lang="sv">${escape(entry.context)}</blockquote><h4>IN THIS SENTENCE</h4><p class="explanation">${escape(entry.explanation)}</p><p class="example" lang="sv">${escape(entry.example)}</p><p class="source-note">${entry.source==='demo'?'Authored demo · grammar and explanations in English; translation available in English or Chinese.':`OpenRouter · ${escape(entry.model)} · ${entry.elapsedMs} ms`}</p><h4>YOUR NOTE</h4><label class="note-label">A thought worth keeping<textarea id="personal-note" rows="3" placeholder="A memory, a connection, your own example…">${escape(entry.note)}</textarea></label><p class="save-state" id="note-state">Saved on this device</p><div class="detail-actions"><button id="open-words">View in Words</button><button id="refresh-lookup">Look up again</button></div></div>`;
+ $('#detail-content').innerHTML=`<div class="detail"><h3 lang="sv">${escape(entry.text)}</h3><p class="translation">${escape(entry.translation)}</p><p class="grammar">${escape(entry.lemma)} · ${escape(entry.grammar)}</p><blockquote lang="sv">${escape(entry.context)}</blockquote><h4>${entry.source==='dictionary'?'DICTIONARY MEANINGS':'IN THIS SENTENCE'}</h4><p class="explanation">${escape(entry.explanation)}</p>${entry.example?`<p class="example" lang="sv">${escape(entry.example)}</p>`:''}${entry.exampleTranslation?`<p class="source-note">${escape(entry.exampleTranslation)}</p>`:''}<p class="source-note">${entry.source==='dictionary'?`<a href="${dictionaryMetadata.sourceUrl}" target="_blank" rel="noopener noreferrer">Folkets lexikon</a> · <a href="${dictionaryMetadata.licenseUrl}" target="_blank" rel="noopener noreferrer">${dictionaryMetadata.license}</a>`:entry.source==='demo'?'Authored demo':`OpenRouter · ${escape(entry.model)} · ${entry.elapsedMs} ms`}</p><h4>YOUR NOTE</h4><label class="note-label">A thought worth keeping<textarea id="personal-note" rows="3" placeholder="A memory, a connection, your own example…">${escape(entry.note)}</textarea></label><p class="save-state" id="note-state">Saved on this device</p><div class="detail-actions"><button id="open-words">View in Words</button><button id="refresh-lookup">Ask AI</button></div></div>`;
  $('#personal-note').addEventListener('input',event=>{const item=entries.find(item=>item.id===entry.id);if(item)item.note=event.target.value;scheduleNoteSave($('#note-state'));});
  $('#personal-note').addEventListener('blur',()=>{clearTimeout(noteTimer);void persist();});
  const playButton=document.createElement('button');playButton.id='play-word';playButton.type='button';
  const heading=$('.detail h3'),headingRow=document.createElement('div');headingRow.className='word-detail-heading';heading.before(headingRow);headingRow.append(heading,playButton);playButton.onclick=()=>speakInReader(entry.text,entry.id,entry.context);
- const wordTransport=document.createElement('div');wordTransport.className='word-audio-player';wordTransport.innerHTML=transportMarkup()+'<p data-word-audio-status class="audio-status" role="status"></p>';headingRow.after(wordTransport);updateSpeechControls();
+ const wordStatus=document.createElement('p');wordStatus.dataset.wordAudioStatus='';wordStatus.className='audio-status';wordStatus.setAttribute('role','status');headingRow.after(wordStatus);updateSpeechControls();
  $('#open-words').onclick=()=>showView('vocabulary');$('#refresh-lookup').onclick=()=>lookup(entry,true);
 }
 $$('[data-try]').forEach(button=>button.onclick=()=>{
@@ -408,7 +410,7 @@ function renderVocabulary(){
  const query=$('#word-search').value.toLowerCase();const items=entries.filter(entry=>`${entry.text} ${entry.translation} ${entry.note}`.toLowerCase().includes(query));
  $('#vocabulary-list').innerHTML=items.length?items.map(entry=>{
    const expanded=expandedWords.has(entry.id),state=vocabularyAI.get(entry.id),busy=state?.pending;
-   return `<article class="vocab-card${expanded?' is-expanded':''}" data-entry="${escape(entry.id)}"><div class="vocab-card-heading"><button type="button" class="vocab-expand" data-expand="${escape(entry.id)}" aria-expanded="${expanded}" aria-controls="vocab-details-${escape(entry.id)}" aria-label="${expanded?'Collapse':'Expand'} ${escape(entry.text)}"><span class="vocab-word" lang="sv">${escape(entry.text)}</span><span class="vocab-chevron" aria-hidden="true">${expanded?'−':'+'}</span><span class="vocab-meaning">${escape(entry.translation)}</span></button><button type="button" class="pronounce-button" data-pronounce="${escape(entry.id)}" aria-label="Pronounce ${escape(entry.text)}" aria-pressed="false">${speakerIcon}</button><button type="button" class="delete-word-button" data-delete-word="${escape(entry.id)}" aria-label="Delete ${escape(entry.text)}" title="Delete word"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button></div><div class="vocab-card-meta"><span class="pill">${entry.source==='demo'?'Demo fixture':'OpenRouter AI'}</span>${entry.note?'<span class="note-indicator">Has a note</span>':''}</div><p class="context" lang="sv">${escape(entry.context)}</p><p data-vocab-audio-status="${escape(entry.id)}" class="audio-status" role="status" hidden></p><div class="vocab-details" id="vocab-details-${escape(entry.id)}" ${expanded?'':'hidden'}><div data-vocab-transport="${escape(entry.id)}" hidden>${transportMarkup()}</div><h4>SAVED EXPLANATION</h4><p class="grammar">${escape(entry.lemma)} · ${escape(entry.grammar)}</p><p>${escape(entry.explanation)}</p><h4>SWEDISH EXAMPLE</h4><p class="example" lang="sv">${escape(entry.example)}</p><div class="vocab-ai"><div class="vocab-ai-toolbar"><label>Explanation language<select data-vocab-language ${busy?'disabled':''}><option value="en" ${(entry.aiExplanation?.language||entry.language)!=='zh'?'selected':''}>English</option><option value="zh" ${(entry.aiExplanation?.language||entry.language)==='zh'?'selected':''}>中文</option></select></label><button type="button" data-ask-ai ${busy?'disabled':''}>${busy?'Asking AI…':state?.error?'Try AI again':'Ask AI'}</button></div><div class="vocab-ai-answer" aria-live="polite">${vocabularyAnswer(entry)}</div><p class="vocab-ai-status${state?.error?' error':''}" role="status">${escape(state?.error|| (busy?'Preparing an explanation and example…':''))}</p></div><label class="vocab-note-label">Your note<textarea data-vocab-note rows="3" placeholder="A memory, a connection, your own example…">${escape(entry.note)}</textarea></label><p class="save-state" data-vocab-note-state>Saved on this device</p></div></article>`;
+   return `<article class="vocab-card${expanded?' is-expanded':''}" data-entry="${escape(entry.id)}"><div class="vocab-card-heading"><button type="button" class="vocab-expand" data-expand="${escape(entry.id)}" aria-expanded="${expanded}" aria-controls="vocab-details-${escape(entry.id)}" aria-label="${expanded?'Collapse':'Expand'} ${escape(entry.text)}"><span class="vocab-word" lang="sv">${escape(entry.text)}</span><span class="vocab-chevron" aria-hidden="true">${expanded?'−':'+'}</span><span class="vocab-meaning">${escape(entry.translation)}</span></button><button type="button" class="pronounce-button" data-pronounce="${escape(entry.id)}" aria-label="Pronounce ${escape(entry.text)}" aria-pressed="false">${speakerIcon}</button><button type="button" class="delete-word-button" data-delete-word="${escape(entry.id)}" aria-label="Delete ${escape(entry.text)}" title="Delete word"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button></div><div class="vocab-card-meta"><span class="pill">${entrySource(entry)}</span>${entry.note?'<span class="note-indicator">Has a note</span>':''}</div><p class="context" lang="sv">${escape(entry.context)}</p><p data-vocab-audio-status="${escape(entry.id)}" class="audio-status" role="status" hidden></p><div class="vocab-details" id="vocab-details-${escape(entry.id)}" ${expanded?'':'hidden'}><h4>SAVED EXPLANATION</h4><p class="grammar">${escape(entry.lemma)} · ${escape(entry.grammar)}</p><p>${escape(entry.explanation)}</p>${entry.example?`<h4>SWEDISH EXAMPLE</h4><p class="example" lang="sv">${escape(entry.example)}</p>`:''}${entry.exampleTranslation?`<p class="source-note">${escape(entry.exampleTranslation)}</p>`:''}<div class="vocab-ai"><div class="vocab-ai-toolbar"><label>Explanation language<select data-vocab-language ${busy?'disabled':''}><option value="en" ${(entry.aiExplanation?.language||entry.language)!=='zh'?'selected':''}>English</option><option value="zh" ${(entry.aiExplanation?.language||entry.language)==='zh'?'selected':''}>中文</option></select></label><button type="button" data-ask-ai ${busy?'disabled':''}>${busy?'Asking AI…':state?.error?'Try AI again':'Ask AI'}</button></div><div class="vocab-ai-answer" aria-live="polite">${vocabularyAnswer(entry)}</div><p class="vocab-ai-status${state?.error?' error':''}" role="status">${escape(state?.error|| (busy?'Preparing an explanation and example…':''))}</p></div><label class="vocab-note-label">Your note<textarea data-vocab-note rows="3" placeholder="A memory, a connection, your own example…">${escape(entry.note)}</textarea></label><p class="save-state" data-vocab-note-state>Saved on this device</p></div></article>`;
  }).join(''):`<div class="empty-state">${entries.length?'No matching words.':'No saved words yet.'}</div>`;
  updateSpeechControls();
 }
@@ -423,7 +425,7 @@ function toggleVocabularyCard(card) {
 async function askVocabularyAI(card) {
  const entry=entries.find(item=>item.id===card.dataset.entry);if(!entry||vocabularyAI.get(entry.id)?.pending)return;
  const state={pending:true,error:''};vocabularyAI.set(entry.id,state);
- const language=card.querySelector('[data-vocab-language]').value;
+ const language=card.querySelector('[data-vocab-language]').value,account=dictionaryAccount();
  const update=()=>{
    const current=$$('[data-entry]').find(item=>item.dataset.entry===entry.id);if(!current)return;
    const button=current.querySelector('[data-ask-ai]');button.disabled=state.pending;button.textContent=state.pending?'Asking AI…':state.error?'Try AI again':'Ask AI';
@@ -435,6 +437,7 @@ async function askVocabularyAI(card) {
  try{
    if(!config.configured)throw new Error('Configure OpenRouter to ask AI about this word.');
    const result=await(await api('/api/lookup',{text:entry.text,context:entry.context,language,refresh:true})).json();
+   await dictionary.remember(entry,result,{language,account});
    const current=entries.find(item=>item.id===entry.id);if(!current||vocabularyAI.get(entry.id)!==state)return;
    current.aiExplanation={...result,language,generatedAt:new Date().toISOString()};
    if(!await persist())state.error='The explanation arrived but could not be saved. Export your words before closing.';
@@ -591,3 +594,5 @@ if(cloudEnabled){
  void(async()=>{try{const cached=await deviceDB.load('local-device');if(cached?.snapshot)applyCloudSnapshot(cached.snapshot,{preserveActive:false});else await deviceDB.save('local-device',{snapshot:snapshot()});}catch{toast('Could not open local storage. Export a backup before importing a long text.');}finally{$('#workspace').hidden=false;void loadConnection();}})();
 }
 
+
+void dictionary.start().then(()=>{$('#dictionary-state').textContent=`${dictionaryMetadata.formCount.toLocaleString()} Swedish words and forms · available locally`;}).catch(()=>{$('#dictionary-state').textContent='Dictionary download unavailable. Retry lookup when connected.';});

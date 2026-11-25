@@ -1,0 +1,16 @@
+{
+  "version": "folkets-1.0.4488-compact-v1-b4b135e9f0e5",
+  "name": "Folkets lexikon",
+  "sourceLanguage": "sv",
+  "targetLanguage": "en",
+  "sourceUrl": "https://folkets-lexikon.csc.kth.se/folkets/om.en.html",
+  "downloadUrl": "https://folkets-lexikon.csc.kth.se/folkets/folkets_sv_en_public.xml",
+  "license": "CC BY-SA 2.5",
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.5/",
+  "attribution": "Folkets lexikon / The People's Dictionary, based on Lexin from the Swedish Language Council; developed by Viggo Kann and Joachim Hollman / Algoritmica HB and hosted by KTH Royal Institute of Technology. See source for full contributors.",
+  "modifications": "Läsrum compact JSON conversion: translated entries, part-of-speech labels, spelling/inflection index, and up to two bilingual examples per entry. The derived data remains CC BY-SA 2.5.",
+  "sourceUpdated": "2024-12-14",
+  "sourceSHA256": "b4b135e9f0e540e259c8c5363248541f095533d4a1f1443e3f559c3410b7674f",
+  "entryCount": 39207,
+  "formCount": 70784
+}

@@ -87,3 +87,7 @@
 .vocab-card .delete-word-button{display:flex;align-items:center;justify-content:center;flex:0 0 36px;width:36px;min-height:42px;padding:8px;border:0;background:transparent;border-radius:50%;color:#8a493b}
 .vocab-card .delete-word-button:hover{background:#f5e8e3}
 .vocab-card-heading{gap:8px}
+
+.explanation{white-space:pre-line}
+[data-word-audio-status]:empty{display:none}
+#dictionary-state,.dictionary-attribution{font-size:.7rem;line-height:1.5;color:var(--muted)}

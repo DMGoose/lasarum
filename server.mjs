@@ -138,7 +138,7 @@ export function createApp({apiKey = process.env.OPENROUTER_API_KEY || '', textMo
        throw error(404,'API endpoint not found.');
      }
      if (req.method !== 'GET' && req.method !== 'HEAD') throw error(405,'Method not allowed.');
-     const files = {'/':'index.html','/app.js':'app.js','/style.css':'style.css','/core.js':'core.js','/sample.js':'sample.js','/library.js':'library.js','/reading.js':'reading.js','/sync-core.js':'sync-core.js','/sync.js':'sync.js','/local-db.js':'local-db.js','/cloud-runtime.js':'cloud-runtime.js','/cloud-api.js':'cloud-api.js','/project-config.json':'project-config.json'};
+     const files = {'/':'index.html','/app.js':'app.js','/style.css':'style.css','/core.js':'core.js','/sample.js':'sample.js','/library.js':'library.js','/dictionary.js':'dictionary.js','/dictionary-data.json':'dictionary-data.json','/dictionary-meta.json':'dictionary-meta.json','/reading.js':'reading.js','/sync-core.js':'sync-core.js','/sync.js':'sync.js','/local-db.js':'local-db.js','/cloud-runtime.js':'cloud-runtime.js','/cloud-api.js':'cloud-api.js','/project-config.json':'project-config.json'};
      const name = files[url.pathname];
      if (!name) throw error(404,'Not found.');
      const bytes = await readFile(path.join(root,'public',name));

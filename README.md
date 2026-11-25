@@ -78,3 +78,11 @@ The prototype now includes the original sample, a personal article Library, word
 
 See `docs/PRD.md` for the product specification and `docs/PHASE0.md` for evaluation status and the remaining exit criteria.
 
+
+## Local Swedish–English dictionary
+
+Word lookup first uses the bundled Folkets lexikon dataset: 39,207 translated senses and 70,784 indexed Swedish words and inflected forms. Its first download is about 4 MB, then IndexedDB retains it on this device. Dictionary hits make no text-model request. Multiple senses are displayed as dictionary meanings; **Ask AI** explicitly requests an explanation for the current sentence. Missing entries use the configured text model and are cached locally for 30 days, scoped by account, sentence, and explanation language (maximum 2,000 cached results). A dictionary download failure is reported rather than silently making an AI request.
+
+Single-word pronunciation uses only a compact speaker button at normal speed. The reading-page player retains seeking, skip controls, and speed selection. Pronunciation still uses the configured speech service and its audio cache; dictionary lookup does not replace speech generation.
+
+Dictionary data source: [Folkets lexikon, hosted by KTH](https://folkets-lexikon.csc.kth.se/folkets/om.en.html), based on Lexin from the Swedish Language Council, developed by Viggo Kann and Joachim Hollman / Algoritmica HB. The compact derivative retains [CC BY-SA 2.5](https://creativecommons.org/licenses/by-sa/2.5/). Full attribution, source version/hash, and conversion changes are in `public/dictionary-meta.json`; `scripts/build_dictionary.py` reproduces the dataset from the official downloadable XML. No remote dictionary audio is bundled.
