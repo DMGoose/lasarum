@@ -86,3 +86,9 @@ Word lookup first uses the bundled Folkets lexikon dataset: 39,207 translated se
 Single-word pronunciation uses only a compact speaker button at normal speed. The reading-page player retains seeking, skip controls, and speed selection. Pronunciation still uses the configured speech service and its audio cache; dictionary lookup does not replace speech generation.
 
 Dictionary data source: [Folkets lexikon, hosted by KTH](https://folkets-lexikon.csc.kth.se/folkets/om.en.html), based on Lexin from the Swedish Language Council, developed by Viggo Kann and Joachim Hollman / Algoritmica HB. The compact derivative retains [CC BY-SA 2.5](https://creativecommons.org/licenses/by-sa/2.5/). Full attribution, source version/hash, and conversion changes are in `public/dictionary-meta.json`; `scripts/build_dictionary.py` reproduces the dataset from the official downloadable XML. No remote dictionary audio is bundled.
+
+## Requested-audio cache
+
+All successfully requested reader/word/voice-studio audio is now saved in a separate on-device IndexedDB database. Replaying the same Swedish text, sentence context, model, and voice under the same account bypasses both the backend and OpenRouter, including after reload. Nothing is generated or fetched in advance. The existing server/cloud audio cache continues to help when an audio clip is first requested from another device. Device clips have no time-based expiry; the 200 MB device budget evicts older clips when full, and clearing browser storage removes them. A failed persistent save falls back to a bounded session cache and never blocks playback. Invalid, failed, or cancelled responses are not saved. Bump the audio cache's pronunciation version if speech instructions or output semantics change.
+
+The finished-playback message remains `Finished. Tap Play to listen again.`

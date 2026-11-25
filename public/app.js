@@ -7,11 +7,13 @@ import {emptySnapshot,validateBackup,mergeBackup} from './sync-core.js';
 import {importDocuments,splitChapters,paginateSentences,restoredPage,pageSpeechText,libraryGroups,MAX_TXT_BYTES} from './reading.js';
 import {LocalDatabase} from './local-db.js';
 import {LocalDictionary,dictionaryMetadata} from './dictionary.js';
+import {AudioCache} from './audio-cache.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const escape = text => String(text ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const STORAGE = 'lasrum.phase0.v1';
 const dictionary=new LocalDictionary();
+const audioCache=new AudioCache();
 const dictionaryAccount=()=>cloudEnabled?(cloudRuntime?.user?.id||'signed-out'):'local-device';
 function entrySource(entry){return entry.source==='dictionary'?'Local dictionary':entry.source==='demo'?'Demo fixture':entry.cacheHit?'Cached AI':'OpenRouter AI';}
 let saved = {};
@@ -87,7 +89,6 @@ async function speakInReader(text,owner,context) {
  }
  stopReaderSpeech();
  const generation=speechGeneration;speechOwner=owner;
- if(!config.configured){updateSpeechControls('Configure OpenRouter to hear Swedish pronunciation.');return;}
  speechState='loading';updateSpeechControls('Preparing Swedish audio…');
  speechRequest=new AbortController();
  try{
@@ -362,7 +363,14 @@ $('#reading-text').addEventListener('pointerup',event=>{
  setTimeout(()=>{selection.removeAllRanges();anchor=null;lookup(selected);},0);
 });
 async function api(endpoint,data,signal){
- if(cloudEnabled)return endpoint==='/api/speech'?speechResponse(data,signal):cloudRequest(endpoint.replace('/api/',''),data,signal);
+ if(endpoint==='/api/speech')return audioCache.response(data,{account:dictionaryAccount(),signal,fetchAudio:()=>{
+   if(!config.configured)throw new Error('Configure OpenRouter to hear new Swedish pronunciation.');
+   return cloudEnabled?speechResponse(data,signal):localAPI(endpoint,data,signal);
+ }});
+ if(cloudEnabled)return cloudRequest(endpoint.replace('/api/',''),data,signal);
+ return localAPI(endpoint,data,signal);
+}
+async function localAPI(endpoint,data,signal){
  const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','X-App-Token':config.token||''},body:JSON.stringify(data),signal});
  if(!response.ok){const result=await response.json();throw new Error(result.error||'Request failed.');}return response;
 }
