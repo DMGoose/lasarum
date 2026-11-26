@@ -89,5 +89,18 @@
 .vocab-card-heading{gap:8px}
 
 .explanation{white-space:pre-line}
+#reader-view{overflow-anchor:none}
+#practice-view{max-width:760px;margin:0 auto}
+.practice-limit{display:flex;align-items:center;gap:10px;font-size:.8rem;white-space:nowrap}.practice-limit select{width:80px}
+.practice-progress{font-size:.85rem;color:var(--muted);margin:10px 0 20px}
+.practice-card{width:100%;border:1px solid var(--line);border-radius:12px;background:var(--paper);padding:28px;text-align:left}
+.practice-front{min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:35px;color:var(--green)}
+.practice-front>span{font:normal clamp(30px,7vw,52px) var(--serif);overflow-wrap:anywhere}.practice-front small{font:14px var(--sans);color:var(--muted)}
+.practice-heading{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.practice-heading h3{font:normal 32px var(--serif);margin:0;overflow-wrap:anywhere;flex:1}.practice-heading>[data-flip]{font-size:.8rem}
+.practice-back{line-height:1.7;overflow-wrap:anywhere}.practice-back h4{font-size:.8rem;margin:24px 0 8px}.practice-back blockquote{border-left:2px solid var(--line);margin:12px 0;padding-left:16px;font:italic 21px/1.6 var(--serif)}
+.practice-translation{font-size:1.2rem;color:var(--green)}.practice-back .example{font-family:var(--serif);font-style:italic}
+.practice-rating{display:flex;gap:12px;margin-top:24px}.practice-rating button{flex:1;min-height:44px}.practice-empty{padding:60px 20px;text-align:center;color:var(--muted)}
+[data-practice-audio-status]:empty{display:none}
+@media(max-width:730px){.topbar nav{overflow-x:auto;justify-content:flex-start}.nav{flex:0 0 auto;min-height:44px;padding:9px 10px}.practice-card{padding:22px}.practice-front{min-height:260px}}
 [data-word-audio-status]:empty{display:none}
 #dictionary-state,.dictionary-attribution{font-size:.7rem;line-height:1.5;color:var(--muted)}

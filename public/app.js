@@ -8,6 +8,7 @@ import {importDocuments,splitChapters,paginateSentences,restoredPage,pageSpeechT
 import {LocalDatabase} from './local-db.js';
 import {LocalDictionary,dictionaryMetadata} from './dictionary.js';
 import {AudioCache} from './audio-cache.js';
+import {mountPractice} from './practice.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const escape = text => String(text ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -32,6 +33,7 @@ let dragStart = null, suppressClick = false;
 const lookupTracker = createLookupTracker(), pendingLookups = new Map();
 const expandedWords = new Set(), vocabularyAI = new Map();
 const speakerIcon='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg>';
+const practiceUI=mountPractice({root:$('#practice-view'),getEntries:()=>entries,getSettings:()=>evaluation,save:persist,speak:entry=>speakInReader(entry.text,`practice:${entry.id}`,entry.context),speakerIcon});
 
 const readerAudio = $('#reader-audio');
 let speechGeneration=0, speechRequest=null, speechURL=null, speechOwner=null, speechState='idle', speechMessage='', readerSpeed=1;
@@ -63,6 +65,7 @@ function updateSpeechControls(message) {
  }
  const audioError=/^(Audio unavailable:|Could not play audio|Playback was blocked)/.test(speechMessage)?speechMessage:'';
  $('#reader-audio-status').textContent=speechOwner===pageAudioOwner()?audioError:'';
+ $$('[data-practice-audio-status]').forEach(label=>label.textContent=speechOwner?.startsWith('practice:')?audioError:'');
  $$('[data-word-audio-status]').forEach(label=>label.textContent=speechOwner===active?.id?audioError:'');
  $$('[data-pronounce]').forEach(button=>{
    const entry=entries.find(item=>item.id===button.dataset.pronounce),selected=speechOwner===`vocab:${entry?.id}`;
@@ -204,11 +207,20 @@ function updateReadingNavigation(){
  $$('[data-page-label]').forEach(label=>label.textContent=`Page ${currentPage+1} / ${readerPages.length}`);
  $$('[data-page-step]').forEach(button=>button.disabled=Number(button.dataset.pageStep)<0?!hasPrevious:!hasNext);
 }
+function holdReaderViewport(){
+ const x=window.scrollX,y=window.scrollY,reader=$('#reader-view');
+ reader.style.minHeight=`${reader.getBoundingClientRect().height}px`;
+ $('#reading-text').style.minHeight=`${$('#reading-text').getBoundingClientRect().height}px`;
+ return ()=>{if(!reader.hidden)window.scrollTo({left:x,top:y,behavior:'instant'});};
+}
 async function openArticle(document,options={}) {
+ const restore=options.preserveViewport?holdReaderViewport():null;
+ if(!restore){$('#reader-view').style.minHeight='';$('#reading-text').style.minHeight='';}
  setReaderArticle(document,options);
  const key=document?.id||'sample',prior=readingProgress[key]||{};
  readingProgress[key]={pageIndex:currentPage,sentenceId:options.pageIndex===undefined&&sentences.some(sentence=>sentence.id===prior.sentenceId)?prior.sentenceId:sentences[0]?.id};
  if(document?.bookId)readingProgress[`book:${document.bookId}`]={documentId:document.id};
+ if(restore){restore();await persist();restore();requestAnimationFrame(restore);return;}
  await persist();showView('reader');window.scrollTo({top:0,behavior:'instant'});
  const progress=readingProgress[key];if(progress?.sentenceId)requestAnimationFrame(()=>[...window.document.querySelectorAll('.sentence')].find(el=>el.dataset.sentence===progress.sentenceId)?.scrollIntoView({block:'nearest'}));
 }
@@ -217,8 +229,8 @@ document.addEventListener('click',async event=>{
  const button=event.target.closest('[data-page-step]');if(!button||button.disabled||turningPage)return;
  turningPage=true;try{
    const step=Number(button.dataset.pageStep),target=currentPage+step;
-   if(target>=0&&target<readerPages.length)await openArticle(currentDocument,{pageIndex:target});
-   else{const chapters=bookChapters(),index=chapters.findIndex(item=>item.id===currentDocument?.id),next=chapters[index+step];if(next)await openArticle(next,{pageIndex:step>0?0:Number.MAX_SAFE_INTEGER});}
+   if(target>=0&&target<readerPages.length)await openArticle(currentDocument,{pageIndex:target,preserveViewport:true});
+   else{const chapters=bookChapters(),index=chapters.findIndex(item=>item.id===currentDocument?.id),next=chapters[index+step];if(next)await openArticle(next,{pageIndex:step>0?0:Number.MAX_SAFE_INTEGER,preserveViewport:true});}
  }finally{turningPage=false;}
 });
 $('#chapter-select').onchange=()=>{const chapter=library.find(item=>item.id===$('#chapter-select').value&&!item.deletedAt);if(chapter)void openArticle(chapter);};
@@ -295,6 +307,7 @@ function showView(view) {
  $$('.nav').forEach(el=>{el.classList.toggle('active',el.dataset.view===view);if(el.dataset.view===view)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');});
  if(view==='vocabulary')renderVocabulary();
  if(view==='library')renderLibrary();
+ if(view==='practice')practiceUI.render();
 }
 $$('.nav').forEach(button=>button.addEventListener('click',()=>showView(button.dataset.view)));
 function renderReader() {
@@ -543,6 +556,7 @@ function scheduleNoteSave(label){
 $('#vocabulary-list').addEventListener('focusout',event=>{if(event.target.matches('[data-vocab-note]')){clearTimeout(noteTimer);void persist().then(()=>cloudRuntime?.engine?.sync());}});
 function applyCloudSnapshot(value,{preserveActive=true}={}){
  if(pendingLocalSaves){deferredRemote=true;return;}
+ const restore=preserveActive&&!$('#reader-view').hidden?holdReaderViewport():null;
  applyingRemote=true;
  const oldDocument=currentDocument,oldPage=currentPage,oldSentenceText=pageSpeechText(sentences);
  entries=value.entries||[];library=value.library||[];evaluation=value.evaluation||emptySnapshot().evaluation;readingProgress=value.readingProgress||{};
@@ -558,6 +572,8 @@ function applyCloudSnapshot(value,{preserveActive=true}={}){
  if(!$('#library-view').hidden)renderLibrary();
  const noteFocused=document.activeElement?.matches('[data-vocab-note]');
  if(!$('#vocabulary-view').hidden&&!noteFocused)renderVocabulary();
+ if(!$('#practice-view').hidden&&!document.activeElement?.matches('[data-practice-note]'))practiceUI.render();
+ restore?.();
  $('#preferred').value=evaluation.preferred||'';if(document.activeElement!==$('#evaluation-notes'))$('#evaluation-notes').value=evaluation.notes||'';
  candidates.forEach(c=>{if(document.activeElement!==$(`#voice-${c.id}`))$(`#voice-${c.id}`).value=evaluation.voices?.[c.id]||c.voice;});
  lastAppSnapshot=snapshot();applyingRemote=false;
@@ -594,7 +610,7 @@ if(cloudEnabled){
  $('#account-controls').hidden=false;$('#local-mode-label').hidden=true;$('.backup-menu>summary').textContent='Account';
  cloudRuntime=new CloudRuntime({onSnapshot:applyCloudSnapshot,onStatus:syncStatus,onAccess:(user,message)=>{
    $('#workspace').hidden=!user;$('#auth-gate').hidden=!!user;$('#sign-out').hidden=!user;$('#sync-now').hidden=!user;$('#export-backup').disabled=!user;$('#import-backup').disabled=!user;$('#account-email').textContent=user?.email||'';$('#auth-message').textContent=message||'Sign in with the Google account approved for your private reading room.';
-   if(!user){stopReaderSpeech();++requestId;for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();backupDraft=null;$('#backup-preview').hidden=true;$('#backup-summary').textContent='';$('#sync-conflicts').replaceChildren();$('#conflict-panel').hidden=true;$('#sync-state').textContent='Sign in to sync';expandedWords.clear();vocabularyAI.clear();entries=[];library=[];evaluation=emptySnapshot().evaluation;readingProgress={};currentDocument=null;readerPages=paginateSentences(sampleSentences);currentPage=0;sentences=readerPages[0];visible=[];active=null;articleMetadata();renderReader();updateCount();$('#vocabulary-list').replaceChildren();$('#library-list').replaceChildren();config={};lastAppSnapshot=snapshot();}
+   if(!user){practiceUI.reset();stopReaderSpeech();++requestId;for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();backupDraft=null;$('#backup-preview').hidden=true;$('#backup-summary').textContent='';$('#sync-conflicts').replaceChildren();$('#conflict-panel').hidden=true;$('#sync-state').textContent='Sign in to sync';expandedWords.clear();vocabularyAI.clear();entries=[];library=[];evaluation=emptySnapshot().evaluation;readingProgress={};currentDocument=null;readerPages=paginateSentences(sampleSentences);currentPage=0;sentences=readerPages[0];visible=[];active=null;articleMetadata();renderReader();updateCount();$('#vocabulary-list').replaceChildren();$('#library-list').replaceChildren();config={};lastAppSnapshot=snapshot();}
    else void loadConnection();
  }});
  void cloudRuntime.start().catch(error=>$('#auth-message').textContent=error.message);
