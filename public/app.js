@@ -9,6 +9,7 @@ import {LocalDatabase} from './local-db.js';
 import {LocalDictionary,dictionaryMetadata} from './dictionary.js';
 import {AudioCache} from './audio-cache.js';
 import {mountPractice} from './practice.js';
+import {createTapLookup} from './tap-lookup.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const escape = text => String(text ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -27,11 +28,17 @@ let currentPage=restoredPage(readerPages,readingProgress[currentDocument?.id||'s
 const deviceDB=cloudEnabled?null:new LocalDatabase();
 let cloudRuntime=null,backupDraft=null,applyingRemote=false,pendingLocalSaves=0,deferredRemote=false,lastAppSnapshot=null;
 $('#workspace').hidden=true;if(cloudEnabled)$('#auth-gate').hidden=false;
-let visible = [], active = null, phrase = false, anchor = null, config = {}, requestId = 0, toastTimer;
+let visible = [], active = null, config = {}, requestId = 0, toastTimer;
 let returnFocus = null;
 let dragStart = null, suppressClick = false;
 const lookupTracker = createLookupTracker(), pendingLookups = new Map();
 const expandedWords = new Set(), vocabularyAI = new Map();
+const tapLookup=createTapLookup({
+ select:(sentenceId,start,end)=>rangeSelection(sentences,sentenceId,start,end),lookup,
+ undo:selection=>void undoLookup(selection),
+ existing:(sentenceId,index)=>[...pendingLookups.values(),...visible].find(item=>item.sentenceId===sentenceId&&index>=item.start&&index<=item.end),
+ preview:selection=>$$('#reading-text .word').forEach(word=>word.classList.toggle('anchor',!!selection&&word.dataset.sentence===selection.sentenceId&&Number(word.dataset.index)>=selection.start&&Number(word.dataset.index)<=selection.end))
+});
 const speakerIcon='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg>';
 const practiceUI=mountPractice({root:$('#practice-view'),getEntries:()=>entries,getSettings:()=>evaluation,save:persist,speak:entry=>speakInReader(entry.text,`practice:${entry.id}`,entry.context),speakerIcon});
 
@@ -162,7 +169,7 @@ function closeDetails() {
 }
 $('#open-details').onclick=openDetails;
 $('#close-details').onclick=closeDetails;
-document.addEventListener('keydown',event=>{if(event.key==='Escape')closeDetails();});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'){tapLookup.cancel();closeDetails();}});
 const candidates = [
  {id:'a',name:'Kore',voice:'Kore',model:'google/gemini-2.5-flash-tts',description:'Gemini 2.5 Flash TTS · Voice A'},
  {id:'b',name:'Puck',voice:'Puck',model:'google/gemini-2.5-flash-tts',description:'Gemini 2.5 Flash TTS · Voice B'}
@@ -194,9 +201,9 @@ function setReaderArticle(document,{pageIndex}={}) {
  for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();
  currentDocument=document;readerPages=paginateSentences(document?articleSentences(document.text,document.id):sampleSentences);
  currentPage=pageIndex===undefined?restoredPage(readerPages,readingProgress[document?.id||'sample']):Math.max(0,Math.min(readerPages.length-1,pageIndex));sentences=readerPages[currentPage];
- visible=[];active=null;anchor=null;returnFocus=null;
+ visible=[];active=null;tapLookup.cancel();returnFocus=null;
  $('#lookup-origin').textContent='Word details';$('#detail-content').innerHTML='<div class="empty-detail"><p>Select a word to translate.</p></div>';
- articleMetadata();setMode(false);
+ articleMetadata();renderReader();
 }
 function bookChapters(){return currentDocument?.bookId?library.filter(item=>item.bookId===currentDocument.bookId&&!item.deletedAt).sort((a,b)=>a.chapterIndex-b.chapterIndex):[];}
 function updateReadingNavigation(){
@@ -301,6 +308,7 @@ $('#import-form').onsubmit=async event=>{
  }catch(err){importStatus(err.message,true);}finally{button.disabled=false;}
 };
 function showView(view) {
+ tapLookup.cancel();
  stopReaderSpeech();
  closeDetails();
  $$('.view').forEach(el=>el.hidden=el.id!==`${view}-view`);
@@ -322,7 +330,7 @@ function renderReader() {
      if(!part.word){html+=escape(part.text);continue;}
      const index=wordIndex++;
      const selection=visible.find(item=>item.sentenceId===sentence.id&&index>=item.start&&index<=item.end);
-     const isAnchor=anchor?.sentenceId===sentence.id&&anchor.index===index;
+     const draft=tapLookup.selection,isAnchor=draft?.sentenceId===sentence.id&&index>=draft.start&&index<=draft.end;
      const label=selection?.start===index?`<span class="inline-translation" aria-hidden="true">${escape(selection.translation)}</span>`:'';
      html+=`<span role="button" tabindex="0" class="word${selection?' marked':''}${isAnchor?' anchor':''}" data-sentence="${sentence.id}" data-index="${index}" aria-label="${selection?'Undo lookup for':'Translate'} ${escape(part.text)}${selection?`: ${escape(selection.translation)}`:''}">${label}<span class="word-text">${escape(part.text)}</span></span>`;
    }
@@ -331,25 +339,16 @@ function renderReader() {
  $('#reading-text').innerHTML=html+'</p>';
  if(focusTarget)document.querySelector(focusTarget)?.focus({preventScroll:true});
 }
-function setMode(value){phrase=value;anchor=null;$('#word-mode').classList.toggle('selected',!value);$('#phrase-mode').classList.toggle('selected',value);$('#word-mode').setAttribute('aria-pressed',String(!value));$('#phrase-mode').setAttribute('aria-pressed',String(value));$('#selection-hint').textContent=value?'Choose the first and last word in one sentence. You can also drag to select a phrase.':'Tap to translate and hear a word. Tap again to undo.';renderReader();}
-$('#word-mode').onclick=()=>setMode(false);$('#phrase-mode').onclick=()=>setMode(true);
-$('#clear').onclick=()=>{visible=[];anchor=null;renderReader();toast('Translations cleared. Your saved words are still available.');};
+$('#clear').onclick=()=>{visible=[];tapLookup.cancel();renderReader();toast('Translations cleared. Your saved words are still available.');};
 $('#font-size').onclick=()=>$('#reading-text').classList.toggle('large');
 function handleWord(word){
  const sentenceId=word.dataset.sentence,index=Number(word.dataset.index);
  returnFocus=`.word[data-sentence="${sentenceId}"][data-index="${index}"]`;
- const selected=[...pendingLookups.values(),...visible].find(item=>item.sentenceId===sentenceId&&index>=item.start&&index<=item.end);
- if(selected&&!anchor){undoLookup(selected);return;}
- if(phrase&&!anchor){anchor={sentenceId,index};renderReader();$('#selection-hint').textContent='Now choose the last word in the same sentence.';return;}
- if(phrase&&anchor){
-   if(anchor.sentenceId!==sentenceId){toast('Choose words within one sentence.');return;}
-   const selected=rangeSelection(sentences,sentenceId,anchor.index,index);anchor=null;$('#selection-hint').textContent='Phrase selected. Choose another first and last word, or switch back to Words.';lookup(selected);return;
- }
- lookup(rangeSelection(sentences,sentenceId,index,index));
+ tapLookup.tap(sentenceId,index);
 }
 $('#reading-text').addEventListener('click',event=>{
  if(suppressClick){suppressClick=false;return;}
- if(window.getSelection()?.toString().trim())return;
+ if(window.getSelection()?.toString().trim()){if(event.detail>1)window.getSelection().removeAllRanges();else return;}
  const word=event.target.closest('.word');if(word)handleWord(word);
 });
 $('#reading-text').addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)&&event.target.matches('.word')){event.preventDefault();handleWord(event.target);}});
@@ -365,7 +364,7 @@ $('#reading-text').addEventListener('pointerup',event=>{
    suppressClick=true;setTimeout(()=>{suppressClick=false;},0);
    if(start.sentenceId!==end.dataset.sentence){toast('Please select a phrase within one sentence.');return;}
    const selected=rangeSelection(sentences,start.sentenceId,start.index,Number(end.dataset.index));
-   setTimeout(()=>{window.getSelection()?.removeAllRanges();anchor=null;lookup(selected);},0);return;
+   setTimeout(()=>{window.getSelection()?.removeAllRanges();tapLookup.cancel();lookup(selected);},0);return;
  }
  const selection=window.getSelection();if(!selection||selection.isCollapsed||!selection.toString().trim())return;
  const range=selection.getRangeAt(0);
@@ -374,7 +373,7 @@ $('#reading-text').addEventListener('pointerup',event=>{
  if(new Set(words.map(word=>word.dataset.sentence)).size!==1){toast('Please select a phrase within one sentence.');return;}
  const first=words[0],last=words.at(-1);
  const selected=rangeSelection(sentences,first.dataset.sentence,Number(first.dataset.index),Number(last.dataset.index));
- setTimeout(()=>{selection.removeAllRanges();anchor=null;lookup(selected);},0);
+ setTimeout(()=>{selection.removeAllRanges();tapLookup.cancel();lookup(selected);},0);
 });
 async function api(endpoint,data,signal){
  if(endpoint==='/api/speech')return audioCache.response(data,{account:dictionaryAccount(),signal,fetchAudio:()=>{
@@ -567,7 +566,7 @@ function applyCloudSnapshot(value,{preserveActive=true}={}){
  currentPage=preserveActive&&oldDocument?.id===currentDocument?.id&&!$('#reader-view').hidden?Math.min(oldPage,readerPages.length-1):restoredPage(readerPages,readingProgress[currentDocument?.id||'sample']);sentences=readerPages[currentPage];
  visible=visible.filter(item=>entries.some(entry=>entry.id===item.id));
  if(active&&!entries.some(entry=>entry.id===active.id)&&!pendingLookups.has(active.id)){active=null;closeDetails();$('#detail-content').innerHTML='<div class="empty-detail">Choose a word to explore its meaning.</div>';}
- if(oldSentenceText!==sentences.map(s=>s.text).join(' ')){visible=[];active=null;anchor=null;stopReaderSpeech();}
+ if(oldSentenceText!==sentences.map(s=>s.text).join(' ')){visible=[];active=null;tapLookup.cancel();stopReaderSpeech();}
  articleMetadata();renderReader();updateCount();
  if(!$('#library-view').hidden)renderLibrary();
  const noteFocused=document.activeElement?.matches('[data-vocab-note]');
@@ -610,7 +609,7 @@ if(cloudEnabled){
  $('#account-controls').hidden=false;$('#local-mode-label').hidden=true;$('.backup-menu>summary').textContent='Account';
  cloudRuntime=new CloudRuntime({onSnapshot:applyCloudSnapshot,onStatus:syncStatus,onAccess:(user,message)=>{
    $('#workspace').hidden=!user;$('#auth-gate').hidden=!!user;$('#sign-out').hidden=!user;$('#sync-now').hidden=!user;$('#export-backup').disabled=!user;$('#import-backup').disabled=!user;$('#account-email').textContent=user?.email||'';$('#auth-message').textContent=message||'Sign in with the Google account approved for your private reading room.';
-   if(!user){practiceUI.reset();stopReaderSpeech();++requestId;for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();backupDraft=null;$('#backup-preview').hidden=true;$('#backup-summary').textContent='';$('#sync-conflicts').replaceChildren();$('#conflict-panel').hidden=true;$('#sync-state').textContent='Sign in to sync';expandedWords.clear();vocabularyAI.clear();entries=[];library=[];evaluation=emptySnapshot().evaluation;readingProgress={};currentDocument=null;readerPages=paginateSentences(sampleSentences);currentPage=0;sentences=readerPages[0];visible=[];active=null;articleMetadata();renderReader();updateCount();$('#vocabulary-list').replaceChildren();$('#library-list').replaceChildren();config={};lastAppSnapshot=snapshot();}
+   if(!user){tapLookup.cancel();practiceUI.reset();stopReaderSpeech();++requestId;for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();backupDraft=null;$('#backup-preview').hidden=true;$('#backup-summary').textContent='';$('#sync-conflicts').replaceChildren();$('#conflict-panel').hidden=true;$('#sync-state').textContent='Sign in to sync';expandedWords.clear();vocabularyAI.clear();entries=[];library=[];evaluation=emptySnapshot().evaluation;readingProgress={};currentDocument=null;readerPages=paginateSentences(sampleSentences);currentPage=0;sentences=readerPages[0];visible=[];active=null;articleMetadata();renderReader();updateCount();$('#vocabulary-list').replaceChildren();$('#library-list').replaceChildren();config={};lastAppSnapshot=snapshot();}
    else void loadConnection();
  }});
  void cloudRuntime.start().catch(error=>$('#auth-message').textContent=error.message);

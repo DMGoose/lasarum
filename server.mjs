@@ -138,6 +138,7 @@ export function createApp({apiKey = process.env.OPENROUTER_API_KEY || '', textMo
      const files = {'/':'index.html','/app.js':'app.js','/style.css':'style.css','/core.js':'core.js','/sample.js':'sample.js','/library.js':'library.js','/dictionary.js':'dictionary.js','/dictionary-data.json':'dictionary-data.json','/dictionary-meta.json':'dictionary-meta.json','/reading.js':'reading.js','/sync-core.js':'sync-core.js','/sync.js':'sync.js','/local-db.js':'local-db.js','/cloud-runtime.js':'cloud-runtime.js','/cloud-api.js':'cloud-api.js','/project-config.json':'project-config.json'};
      files['/audio-cache.js']='audio-cache.js';
      files['/practice.js']='practice.js';
+     files['/tap-lookup.js']='tap-lookup.js';
      const name = files[url.pathname];
      if (!name) throw error(404,'Not found.');
      const bytes = await readFile(path.join(root,'public',name));
