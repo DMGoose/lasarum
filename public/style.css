@@ -104,3 +104,5 @@
 @media(max-width:730px){.topbar nav{overflow-x:auto;justify-content:flex-start}.nav{flex:0 0 auto;min-height:44px;padding:9px 10px}.practice-card{padding:22px}.practice-front{min-height:260px}}
 [data-word-audio-status]:empty{display:none}
 #dictionary-state,.dictionary-attribution{font-size:.7rem;line-height:1.5;color:var(--muted)}
+#reading-text{scroll-margin-top:16px}
+.book h2{scroll-margin-top:16px}

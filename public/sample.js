@@ -6,7 +6,27 @@ export const sentences = [
   {id: 's5', paragraph: 2, text: 'Ibland stöter jag på ett ord som jag inte förstår.'},
   {id: 's6', paragraph: 2, text: 'Då stannar jag upp, lyssnar på meningen och skriver en liten anteckning.'},
   {id: 's7', paragraph: 3, text: 'Det viktigaste är inte att förstå allting på en gång.'},
-  {id: 's8', paragraph: 3, text: 'Det är att vara nyfiken och fortsätta, en sida i taget.'}
+  {id: 's8', paragraph: 3, text: 'Det är att vara nyfiken och fortsätta, en sida i taget.'},
+  {id: 's9', paragraph: 4, text: 'När jag har läst färdigt kapitlet lägger jag ett bokmärke mellan sidorna och tar på mig jackan.'},
+  {id: 's10', paragraph: 4, text: 'Luften är sval, men solen värmer redan husväggarna på andra sidan gatan.'},
+  {id: 's11', paragraph: 5, text: 'Jag går längs kanalen mot biblioteket, där min vän Elin väntar på mig.'},
+  {id: 's12', paragraph: 5, text: 'Vi brukar träffas där på lördagar för att läsa, prata svenska och tipsa varandra om nya böcker.'},
+  {id: 's13', paragraph: 6, text: 'Vid ingången står en skylt med information om dagens aktiviteter för både barn och vuxna.'},
+  {id: 's14', paragraph: 6, text: 'En bibliotekarie berättar att det finns en läsecirkel för personer som håller på att lära sig svenska.'},
+  {id: 's15', paragraph: 7, text: 'Vi bestämmer oss för att vara med och sätter oss vid ett stort bord nära fönstret.'},
+  {id: 's16', paragraph: 7, text: 'Alla får läsa en kort text och sedan berätta vad de tyckte var intressant eller svårt.'},
+  {id: 's17', paragraph: 8, text: 'Först känner jag mig lite nervös, eftersom jag inte alltid hittar de ord jag behöver.'},
+  {id: 's18', paragraph: 8, text: 'Men de andra lyssnar tålmodigt, och snart vågar jag ställa fler frågor och prova nya uttryck.'},
+  {id: 's19', paragraph: 9, text: 'Elin förklarar skillnaden mellan att låna en bok och att låna ut den till någon annan.'},
+  {id: 's20', paragraph: 9, text: 'Jag skriver ner båda uttrycken tillsammans med exempel, så att jag kan öva på dem senare.'},
+  {id: 's21', paragraph: 10, text: 'Efter läsecirkeln går vi till ett litet kafé runt hörnet och beställer kaffe och var sin smörgås.'},
+  {id: 's22', paragraph: 10, text: 'Vi pratar om boken, om veckan som har gått och om våra planer för sommaren.'},
+  {id: 's23', paragraph: 11, text: 'Utanför börjar det regna, och vi stannar kvar en stund medan människor skyndar förbi med sina paraplyer.'},
+  {id: 's24', paragraph: 11, text: 'Jag märker att samtalet känns lättare när jag slutar tänka på att varje mening måste bli perfekt.'},
+  {id: 's25', paragraph: 12, text: 'På vägen hem tar jag fram telefonen och går igenom några av orden som jag sparade under förmiddagen.'},
+  {id: 's26', paragraph: 12, text: 'Några är enkla att komma ihåg, medan andra behöver mer tid, fler exempel och lite tålamod.'},
+  {id: 's27', paragraph: 13, text: 'Hemma öppnar jag boken igen och upptäcker att jag nu förstår en mening som kändes svår i morse.'},
+  {id: 's28', paragraph: 13, text: 'Det är ett litet framsteg, men det gör mig glad och ger mig lust att fortsätta läsa i morgon.'}
 ];
 
 // Authored interaction fixtures. These are never represented as live AI output.

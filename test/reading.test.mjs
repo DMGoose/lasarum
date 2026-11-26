@@ -41,3 +41,9 @@ test('device IndexedDB can save a long book beyond localStorage capacity and sur
  await db.save('large-local-book',{snapshot});db.close();const reopened=new LocalDatabase(indexedDB);const saved=await reopened.load('large-local-book');
  assert.equal(saved.snapshot.library.length,snapshot.library.length);assert.equal(saved.snapshot.library.map(d=>d.text).join(' '),snapshot.library.map(d=>d.text).join(' '));reopened.close();
 });
+
+test('the extended reading sample supports several pages without changing original lookup IDs',async()=>{
+ const {sentences}=await import('../public/sample.js');const pages=paginateSentences(sentences);
+ assert.ok(pages.length>=4);assert.deepEqual(pages.flat(),sentences);assert.equal(sentences[0].id,'s1');assert.equal(sentences[7].id,'s8');assert.equal(new Set(sentences.map(s=>s.id)).size,sentences.length);
+ assert.notEqual(pageSpeechText(pages[0]),pageSpeechText(pages[1]));
+});

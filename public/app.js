@@ -216,18 +216,19 @@ function updateReadingNavigation(){
 }
 function holdReaderViewport(){
  const x=window.scrollX,y=window.scrollY,reader=$('#reader-view');
- reader.style.minHeight=`${reader.getBoundingClientRect().height}px`;
- $('#reading-text').style.minHeight=`${$('#reading-text').getBoundingClientRect().height}px`;
  return ()=>{if(!reader.hidden)window.scrollTo({left:x,top:y,behavior:'instant'});};
 }
 async function openArticle(document,options={}) {
- const restore=options.preserveViewport?holdReaderViewport():null;
- if(!restore){$('#reader-view').style.minHeight='';$('#reading-text').style.minHeight='';}
+ $('#reader-view').style.minHeight='';$('#reading-text').style.minHeight='';
  setReaderArticle(document,options);
  const key=document?.id||'sample',prior=readingProgress[key]||{};
  readingProgress[key]={pageIndex:currentPage,sentenceId:options.pageIndex===undefined&&sentences.some(sentence=>sentence.id===prior.sentenceId)?prior.sentenceId:sentences[0]?.id};
  if(document?.bookId)readingProgress[`book:${document.bookId}`]={documentId:document.id};
- if(restore){restore();await persist();restore();requestAnimationFrame(restore);return;}
+ if(options.startAtArticle){
+   closeDetails();const page=currentPage,articleId=currentDocument?.id;
+   const align=()=>{if(!$('#reader-view').hidden&&currentPage===page&&currentDocument?.id===articleId)$('.book h2').scrollIntoView({block:'start',behavior:'instant'});};
+   align();await persist();align();requestAnimationFrame(align);return;
+ }
  await persist();showView('reader');window.scrollTo({top:0,behavior:'instant'});
  const progress=readingProgress[key];if(progress?.sentenceId)requestAnimationFrame(()=>[...window.document.querySelectorAll('.sentence')].find(el=>el.dataset.sentence===progress.sentenceId)?.scrollIntoView({block:'nearest'}));
 }
@@ -236,8 +237,8 @@ document.addEventListener('click',async event=>{
  const button=event.target.closest('[data-page-step]');if(!button||button.disabled||turningPage)return;
  turningPage=true;try{
    const step=Number(button.dataset.pageStep),target=currentPage+step;
-   if(target>=0&&target<readerPages.length)await openArticle(currentDocument,{pageIndex:target,preserveViewport:true});
-   else{const chapters=bookChapters(),index=chapters.findIndex(item=>item.id===currentDocument?.id),next=chapters[index+step];if(next)await openArticle(next,{pageIndex:step>0?0:Number.MAX_SAFE_INTEGER,preserveViewport:true});}
+   if(target>=0&&target<readerPages.length)await openArticle(currentDocument,{pageIndex:target,startAtArticle:true});
+   else{const chapters=bookChapters(),index=chapters.findIndex(item=>item.id===currentDocument?.id),next=chapters[index+step];if(next)await openArticle(next,{pageIndex:step>0?0:Number.MAX_SAFE_INTEGER,startAtArticle:true});}
  }finally{turningPage=false;}
 });
 $('#chapter-select').onchange=()=>{const chapter=library.find(item=>item.id===$('#chapter-select').value&&!item.deletedAt);if(chapter)void openArticle(chapter);};
