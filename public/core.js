@@ -16,7 +16,11 @@ export function addVisible(previous, next) {
 }
 export function upsertEntry(entries, entry) {
   const existing = entries.find(item => item.id === entry.id);
-  return existing ? entries.map(item => item.id === entry.id ? {...item, ...entry, note: item.note || ''} : item) : [...entries, {...entry, note: ''}];
+  return existing ? entries.map(item => item.id === entry.id ? {...item, ...entry, createdAt:item.createdAt, note: item.note || ''} : item) : [...entries, {...entry, createdAt:entry.createdAt||new Date().toISOString(), note: ''}];
+}
+export function sortVocabulary(entries,newest=true){
+ const time=entry=>Number.isFinite(Date.parse(entry.createdAt))?Date.parse(entry.createdAt):0;
+ return entries.map((entry,index)=>({entry,index})).sort((a,b)=>(newest?-1:1)*(time(a.entry)-time(b.entry)||a.index-b.index)).map(item=>item.entry);
 }
 // A token is valid only until this exact selection is retried or removed.
 export function createLookupTracker() {

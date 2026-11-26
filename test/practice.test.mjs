@@ -24,3 +24,24 @@ test('groups and daily progress round-trip through separate existing sync record
  const snapshot=emptySnapshot();snapshot.entries=words;snapshot.evaluation.practiceDailyLimit=5;snapshot.evaluation[reviewKey(words[0].id)]=reviewed({},'hard',new Date(2026,10,26));snapshot.evaluation[reviewKey(words[1].id)]=reviewed({},'easy',new Date(2026,10,26));
  const rows=snapshotRecords(snapshot);assert.ok(rows.has('user_settings/practice:word-0'));assert.ok(rows.has('user_settings/practice:word-1'));const restored=recordsSnapshot(rows);assert.deepEqual(restored.evaluation,snapshot.evaluation);assert.deepEqual(practicePlan(restored.entries,restored.evaluation,'2026-11-27'),practicePlan(words,snapshot.evaluation,'2026-11-27'));
 });
+
+test('practice auto-pronounces each new card once and replay never flips the card',async()=>{
+ const {mountPractice}=await import('../public/practice.js');const handlers={},spoken=[],settings={},entries=words.slice(0,2);let ready=false;
+ const root={hidden:false,innerHTML:'',addEventListener:(name,fn)=>handlers[name]=fn,querySelectorAll:()=>[],querySelector:()=>({focus(){}})};
+ const ui=mountPractice({root,getEntries:()=>entries,getSettings:()=>settings,save:async()=>true,speak:entry=>spoken.push(entry.id),speakerIcon:'speaker',canSpeak:()=>ready});
+ ui.render();assert.equal(spoken.length,0);ready=true;ui.render();assert.equal(spoken.length,1);assert.match(root.innerHTML,/practice-front-heading/);ui.render();assert.equal(spoken.length,1);
+ await handlers.click({target:{closest:selector=>selector==='[data-flip]'?{}:null}});assert.equal(spoken.length,1);
+ await handlers.click({target:{closest:selector=>selector==='[data-practice-pronounce]'?{}:null}});assert.equal(spoken.length,2);assert.equal(spoken[0],spoken[1]);
+ await handlers.click({target:{closest:selector=>selector==='[data-review]'?{dataset:{review:'medium'}}:null}});assert.equal(spoken.length,3);assert.notEqual(spoken[1],spoken[2]);
+});
+
+test('screen-sized practice pages retain long explanations and Unicode without lost text',async()=>{
+ const {practiceTextPages,practiceSections}=await import('../public/practice.js');const text='Åsa läser.\n\n'+('svenska '.repeat(40))+'ö'.repeat(80)+' 😀';const pages=practiceTextPages(text,value=>Array.from(value).length<=45);assert.ok(pages.length>2);assert.equal(pages.join(''),text);assert.ok(pages.every(page=>Array.from(page).length<=45));
+ const sections=practiceSections({translation:'quiet',context:'En stilla morgon.',note:'my note',aiExplanation:{question:'Why?',explanation:'A saved answer.'}});assert.ok(sections.find(section=>section.id==='examples').text.includes('En stilla morgon.'));assert.ok(sections.find(section=>section.id==='ai').text.includes('A saved answer.'));assert.equal(sections.find(section=>section.id==='notes').text,'my note');
+});
+
+test('category browser keeps unclassified words separate without changing daily scheduling',async()=>{
+ const {practiceGroups,practiceCategory}=await import('../public/practice.js');const settings={};settings[reviewKey(words[0].id)]={difficulty:'hard'};settings[reviewKey(words[1].id)]={difficulty:'medium'};settings[reviewKey(words[2].id)]={difficulty:'easy'};
+ const groups=practiceGroups(words.slice(0,5),settings);assert.deepEqual(Object.values(groups).map(items=>items.length),[1,1,1,2]);assert.equal(practiceCategory(undefined),'unclassified');assert.equal(difficultyOf(undefined),'medium');assert.equal(practiceCategory({lastReviewedAt:'2026-01-01',interval:0}),'hard');
+ settings[reviewKey(words[3].id)]=reviewed({},'easy',new Date(2026,10,26));assert.equal(practiceGroups(words.slice(0,5),settings).unclassified.length,1);assert.equal(practiceGroups(words.slice(0,5),settings).easy.length,2);assert.equal(practiceGroups(words.slice(0,3),settings).easy.length,1);
+});

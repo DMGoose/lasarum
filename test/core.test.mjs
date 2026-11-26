@@ -42,3 +42,9 @@ test('undo and retry invalidate late replies without cancelling other words',asy
  assert.equal(tracker.isCurrent('other',other),true);
  tracker.cancel('word');assert.equal(tracker.isCurrent('word',next),false);
 });
+
+test('word creation time survives refreshing its definition and sorting never mutates saved order',async()=>{
+ const {sortVocabulary}=await import('../public/core.js');const old={id:'old',text:'gammal',createdAt:'2026-01-01T00:00:00Z'},fresh={id:'new',text:'ny',createdAt:'2026-02-01T00:00:00Z'};
+ const entries=upsertEntry([old,fresh],{id:'old',translation:'updated',createdAt:'2026-12-01T00:00:00Z'});assert.equal(entries[0].createdAt,old.createdAt);assert.deepEqual(sortVocabulary(entries,true).map(x=>x.id),['new','old']);assert.deepEqual(sortVocabulary(entries,false).map(x=>x.id),['old','new']);assert.equal(entries[0].id,'old');assert.ok(upsertEntry([],{id:'third'})[0].createdAt);
+ const legacy=[{id:'first'},{id:'second'}];assert.deepEqual(sortVocabulary(legacy,true).map(x=>x.id),['second','first']);
+});

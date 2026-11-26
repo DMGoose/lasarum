@@ -18,3 +18,8 @@ test('cloud chunk requests combine into a valid seekable WAV and reuse completed
 test('cloud upstream errors never expose provider bodies or credentials',async()=>{
  await assert.rejects(()=>openRouter('/audio/speech',{}, {key:'server-secret',fetcher:async()=>new Response('secret debug text',{status:402})}),error=>error.message==='OpenRouter credits are insufficient.');
 });
+
+test('optional learner questions keep the original prompt and context and validate bounds',()=>{
+ const data={text:'stilla',context:'Det är en stilla morgon.',language:'en'},plain=lookupPayload(data),asked=lookupPayload({...data,question:'  Why does it end in a?  '});
+ assert.equal(asked.messages[0].content,plain.messages[0].content);const payload=JSON.parse(asked.messages.find(message=>message.role==='user').content);assert.equal(payload.selected,data.text);assert.equal(payload.sourceSentence,data.context);assert.equal(payload.learnerQuestion,'Why does it end in a?');assert.equal(JSON.parse(plain.messages.at(-1).content).learnerQuestion,undefined);assert.throws(()=>lookupPayload({...data,question:'a'.repeat(1001)}),/at most 1000/);
+});

@@ -96,3 +96,8 @@ test('Chinese explanations reject untranslated required fields',()=>{
  assert.throws(()=>validateExplanation({translation:'like',lemma:'tycka om',grammar:'verb',explanation:'Expresses liking.',example:'Jag tycker om kaffe.'},'Chinese'),/Chinese explanation/);
  assert.equal(validateExplanation({translation:'喜欢',lemma:'tycka om',grammar:'动词短语',explanation:'表达喜好。',example:'Jag tycker om kaffe.'},'Chinese').translation,'喜欢');
 });
+
+test('local questions reach the text model and cache independently from ordinary explanations',async t=>{
+ const prompts=[];const app=await setup(t,{apiKey:'test-key',request:async(_url,options)=>{prompts.push(JSON.parse(options.body));return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({translation:'quiet',lemma:'stilla',grammar:'adjective',explanation:'A contextual explanation.',example:'En stilla kväll.'})}}]}),{headers:{'Content-Type':'application/json'}});}});
+ const data={text:'stilla',context:'En stilla morgon.',language:'en'};assert.equal((await app.post('/api/lookup',data)).status,200);assert.equal((await app.post('/api/lookup',{...data,question:'Explain this adjective.'})).status,200);assert.equal(prompts.length,2);assert.equal(JSON.parse(prompts[1].messages.find(message=>message.role==='user').content).learnerQuestion,'Explain this adjective.');await app.post('/api/lookup',{...data,question:'Explain this adjective.'});assert.equal(prompts.length,2);assert.equal((await app.post('/api/lookup',{...data,question:123})).status,400);
+});

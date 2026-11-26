@@ -105,3 +105,22 @@ Read has one selection behavior and no Words/Phrase switch. A single tap looks u
 ## Article-title pagination
 
 The authored sample now contains 28 sentences across four reading pages. Original s1–s8 lookup identities are retained. Previous and Next, including chapter-boundary page turns, move to the article title rather than to the website navigation/header. The article title starts 16 px below the viewport edge. Short final pages keep their natural content height; title scrolling uses the available document space. Background sync still preserves the active viewport. Voice studio evaluation passages remain unchanged and Read page still sends only the current page to speech.
+## Reading questions, word order and practice audio (released)
+
+Reading details now include an optional 1,000-character question beside Ask AI. The original Swedish tutor prompt and source sentence are retained, and a custom learner request is included separately. Blank input still requests the normal explanation. A saved answer is kept under aiExplanation, visible in Reading, Words and Practice, without overwriting the dictionary meaning or personal note. Custom answers do not populate the generic dictionary/AI lookup cache. The existing selected text model remains unchanged; generated grammar and compliance with requested example counts can be inaccurate.
+
+Words has a compact Newest/Oldest toggle, persisted in account settings. Newly added entries record createdAt; refreshing a definition preserves it. Older entries without historical timestamps use their existing stored order as a fallback.
+
+Practice fronts have separate flip and speaker buttons. Each new card auto-pronounces once; flipping or re-rendering the same card does not generate another pronunciation. The speaker replays from the beginning, including while audio is already playing. Entering Practice again resumes automatic pronunciation. Existing local/cloud requested-audio caches apply; a new uncached pronunciation can use OpenRouter credits.
+
+## Focused Practice session (released)
+
+Practice opens a separate full-viewport study surface with the main website navigation/account header hidden. Exit practice (or Escape) returns to the previous app view. Difficulty buttons always remain below the card, inside the viewport. Front pronunciation and automatic pronunciation remain available.
+
+The back defaults to Examples with the meaning visible above it. Meaning, Examples, saved AI explanations, and Notes are separate tabs. Oversized text is split into measured screen-sized detail pages with previous/next arrows, preserving all characters rather than clipping or forcing vertical card scrolling. Notes can be edited from their tab. Landscape/small-height layouts use compact controls. The review algorithm and saved progress are unchanged.
+
+## Practice word categories (released)
+
+The list icon beside Practice opens four groups: difficult, medium, easy, and unclassified. Each group shows its total, Swedish words, English meanings, and individual pronunciation buttons. Search filters the selected group by word or meaning. Lists use screen-sized pages; Back to flashcards returns to the current review without grading it. Opening the browser pauses ongoing pronunciation.
+
+Unclassified means no saved difficulty has been chosen. Legacy Again reviews map to difficult and legacy Remembered reviews map to medium. Unclassified words retain their existing medium priority in the daily queue until graded; browsing does not change scheduling or progress. Categories are derived from the existing synced review settings and active vocabulary, so no new database tables are needed.

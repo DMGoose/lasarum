@@ -10,6 +10,7 @@ import {LocalDictionary,dictionaryMetadata} from './dictionary.js';
 import {AudioCache} from './audio-cache.js';
 import {mountPractice} from './practice.js';
 import {createTapLookup} from './tap-lookup.js';
+import {sortVocabulary} from './core.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const escape = text => String(text ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -33,6 +34,8 @@ let returnFocus = null;
 let dragStart = null, suppressClick = false;
 const lookupTracker = createLookupTracker(), pendingLookups = new Map();
 const expandedWords = new Set(), vocabularyAI = new Map();
+const readingAI=new Map();
+let practiceReturnView='reader';
 const tapLookup=createTapLookup({
  select:(sentenceId,start,end)=>rangeSelection(sentences,sentenceId,start,end),lookup,
  undo:selection=>void undoLookup(selection),
@@ -40,7 +43,7 @@ const tapLookup=createTapLookup({
  preview:selection=>$$('#reading-text .word').forEach(word=>word.classList.toggle('anchor',!!selection&&word.dataset.sentence===selection.sentenceId&&Number(word.dataset.index)>=selection.start&&Number(word.dataset.index)<=selection.end))
 });
 const speakerIcon='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg>';
-const practiceUI=mountPractice({root:$('#practice-view'),getEntries:()=>entries,getSettings:()=>evaluation,save:persist,speak:entry=>speakInReader(entry.text,`practice:${entry.id}`,entry.context),speakerIcon});
+const practiceUI=mountPractice({root:$('#practice-view'),getEntries:()=>entries,getSettings:()=>evaluation,save:persist,speak:entry=>speakInReader(entry.text,`practice:${entry.id}`,entry.context,{restart:true}),speakerIcon,canSpeak:()=>!!config.configured,onExit:()=>showView(practiceReturnView),onPause:stopReaderSpeech});
 
 const readerAudio = $('#reader-audio');
 let speechGeneration=0, speechRequest=null, speechURL=null, speechOwner=null, speechState='idle', speechMessage='', readerSpeed=1;
@@ -74,11 +77,11 @@ function updateSpeechControls(message) {
  $('#reader-audio-status').textContent=speechOwner===pageAudioOwner()?audioError:'';
  $$('[data-practice-audio-status]').forEach(label=>label.textContent=speechOwner?.startsWith('practice:')?audioError:'');
  $$('[data-word-audio-status]').forEach(label=>label.textContent=speechOwner===active?.id?audioError:'');
- $$('[data-pronounce]').forEach(button=>{
-   const entry=entries.find(item=>item.id===button.dataset.pronounce),selected=speechOwner===`vocab:${entry?.id}`;
+ $$('[data-pronounce],[data-practice-pronounce]').forEach(button=>{
+   const practice=!!button.dataset.practicePronounce,entry=entries.find(item=>item.id===(button.dataset.pronounce||button.dataset.practicePronounce)),selected=speechOwner===`${practice?'practice':'vocab'}:${entry?.id}`;
    const loading=selected&&speechState==='loading',playing=selected&&speechState==='playing';
-   button.innerHTML=loading?'…':playing?'Ⅱ':speakerIcon;
-   button.setAttribute('aria-label',`${loading?'Cancel pronunciation for':playing?'Pause pronunciation for':'Pronounce'} ${entry?.text||''}`);
+   button.innerHTML=practice?speakerIcon:loading?'…':playing?'Ⅱ':speakerIcon;
+   button.setAttribute('aria-label',`${practice?'Replay pronunciation for':loading?'Cancel pronunciation for':playing?'Pause pronunciation for':'Pronounce'} ${entry?.text||''}`);
    button.setAttribute('aria-pressed',String(loading||playing));
  });
  $$('[data-vocab-audio-status]').forEach(label=>{const selected=speechOwner===`vocab:${label.dataset.vocabAudioStatus}`;label.hidden=!selected||!audioError;label.textContent=selected?audioError:'';});
@@ -90,11 +93,11 @@ function stopReaderSpeech() {
  if(speechURL)URL.revokeObjectURL(speechURL);
  speechURL=null;speechOwner=null;speechState='idle';updateSpeechControls('');
 }
-async function speakInReader(text,owner,context) {
- if(speechOwner===owner&&speechState==='loading'){stopReaderSpeech();return;}
- if(speechOwner===owner&&!readerAudio.paused){readerAudio.pause();return;}
+async function speakInReader(text,owner,context,{restart=false}={}) {
+ if(speechOwner===owner&&speechState==='loading'){if(!restart)stopReaderSpeech();return;}
+ if(speechOwner===owner&&!readerAudio.paused&&!restart){readerAudio.pause();return;}
  if(speechOwner===owner&&speechURL){
-   if(readerAudio.ended)readerAudio.currentTime=0;
+   if(readerAudio.ended||restart)readerAudio.currentTime=0;
    try{await readerAudio.play();}catch{updateSpeechControls('Playback was blocked. Tap Play to try again.');}
    return;
  }
@@ -309,6 +312,8 @@ $('#import-form').onsubmit=async event=>{
  }catch(err){importStatus(err.message,true);}finally{button.disabled=false;}
 };
 function showView(view) {
+ if(view==='practice'&&$('#practice-view').hidden)practiceReturnView=$$('.view').find(el=>!el.hidden)?.id.replace('-view','')||'reader';
+ document.body.classList.toggle('practice-mode',view==='practice');
  tapLookup.cancel();
  stopReaderSpeech();
  closeDetails();
@@ -317,6 +322,7 @@ function showView(view) {
  if(view==='vocabulary')renderVocabulary();
  if(view==='library')renderLibrary();
  if(view==='practice')practiceUI.render();
+ else practiceUI.leave();
 }
 $$('.nav').forEach(button=>button.addEventListener('click',()=>showView(button.dataset.view)));
 function renderReader() {
@@ -418,7 +424,26 @@ function renderDetail(entry){
  const playButton=document.createElement('button');playButton.id='play-word';playButton.type='button';
  const heading=$('.detail h3'),headingRow=document.createElement('div');headingRow.className='word-detail-heading';heading.before(headingRow);headingRow.append(heading,playButton);playButton.onclick=()=>speakInReader(entry.text,entry.id,entry.context);
  const wordStatus=document.createElement('p');wordStatus.dataset.wordAudioStatus='';wordStatus.className='audio-status';wordStatus.setAttribute('role','status');headingRow.after(wordStatus);updateSpeechControls();
- $('#open-words').onclick=()=>showView('vocabulary');$('#refresh-lookup').onclick=()=>lookup(entry,true);
+ const state=readingAI.get(entry.id)||{question:entry.aiExplanation?.question||'',pending:false,error:''};readingAI.set(entry.id,state);
+ const question=document.createElement('label');question.className='reading-ai-question';question.innerHTML='Your question (optional)<textarea id="reading-question" maxlength="1000" rows="2" placeholder="Ask about grammar, usage, or another example…"></textarea>';
+ $('.detail-actions').before(question);const input=question.querySelector('textarea');input.value=state.question;input.disabled=state.pending;input.oninput=()=>state.question=input.value;
+ const status=document.createElement('p');status.className='reading-ai-status error';status.setAttribute('role','status');status.textContent=state.error;question.after(status);
+ if(entry.aiExplanation){const answer=document.createElement('div');answer.className='reading-ai-answer';answer.innerHTML=`<h4>AI EXPLANATION</h4>${vocabularyAnswer(entry)}`;question.before(answer);}
+ $('#open-words').onclick=()=>showView('vocabulary');$('#refresh-lookup').disabled=state.pending;$('#refresh-lookup').textContent=state.pending?'Asking AI…':'Ask AI';$('#refresh-lookup').onclick=()=>askReadingAI(entry);
+}
+async function askReadingAI(entry){
+ const state=readingAI.get(entry.id);if(!state||state.pending)return;
+ state.question=$('#reading-question').value.trim();state.pending=true;state.error='';
+ const account=dictionaryAccount(),token=lookupTracker.begin(entry.id),question=state.question;renderDetail(entry);
+ try{
+   if(!config.configured)throw new Error('Configure OpenRouter to ask AI about this word.');
+   const result=await(await api('/api/lookup',{text:entry.text,context:entry.context,language:'en',refresh:true,...(question?{question}:{})})).json();
+   if(account!==dictionaryAccount()||!lookupTracker.isCurrent(entry.id,token))return;
+   const current=entries.find(item=>item.id===entry.id);if(!current)return;
+   current.aiExplanation={...result,language:'en',question,generatedAt:new Date().toISOString()};
+   if(!await persist())state.error='The explanation could not be saved. Please try again.';
+ }catch(error){state.error=error.message;}
+ finally{state.pending=false;const current=entries.find(item=>item.id===entry.id);if(current&&account===dictionaryAccount()&&active?.id===entry.id&&!$('#reader-view').hidden)renderDetail(current);}
 }
 $$('[data-try]').forEach(button=>button.onclick=()=>{
  const text=button.dataset.try;
@@ -429,7 +454,8 @@ function vocabularyAnswer(entry) {
  return answer?`<p class="grammar">${escape(answer.lemma)} · ${escape(answer.grammar)}</p><p>${escape(answer.explanation)}</p><h4>SWEDISH EXAMPLE</h4><p class="example" lang="sv">${escape(answer.example)}</p><p class="source-note">OpenRouter · ${escape(answer.model)} · ${answer.language==='zh'?'中文':'English'}</p>`:'<p class="muted">Ask AI for a fresh explanation and a Swedish example in this sentence.</p>';
 }
 function renderVocabulary(){
- const query=$('#word-search').value.toLowerCase();const items=entries.filter(entry=>`${entry.text} ${entry.translation} ${entry.note}`.toLowerCase().includes(query));
+ const newest=evaluation.wordSort!=='oldest',sort=$('#sort-words');sort.textContent=newest?'↓ Newest':'↑ Oldest';sort.setAttribute('aria-label',newest?'Sort words: newest first':'Sort words: oldest first');sort.title=newest?'Switch to oldest first':'Switch to newest first';
+ const query=$('#word-search').value.toLowerCase();const items=sortVocabulary(entries.filter(entry=>`${entry.text} ${entry.translation} ${entry.note}`.toLowerCase().includes(query)),newest);
  $('#vocabulary-list').innerHTML=items.length?items.map(entry=>{
    const expanded=expandedWords.has(entry.id),state=vocabularyAI.get(entry.id),busy=state?.pending;
    return `<article class="vocab-card${expanded?' is-expanded':''}" data-entry="${escape(entry.id)}"><div class="vocab-card-heading"><button type="button" class="vocab-expand" data-expand="${escape(entry.id)}" aria-expanded="${expanded}" aria-controls="vocab-details-${escape(entry.id)}" aria-label="${expanded?'Collapse':'Expand'} ${escape(entry.text)}"><span class="vocab-word" lang="sv">${escape(entry.text)}</span><span class="vocab-chevron" aria-hidden="true">${expanded?'−':'+'}</span><span class="vocab-meaning">${escape(entry.translation)}</span></button><button type="button" class="pronounce-button" data-pronounce="${escape(entry.id)}" aria-label="Pronounce ${escape(entry.text)}" aria-pressed="false">${speakerIcon}</button><button type="button" class="delete-word-button" data-delete-word="${escape(entry.id)}" aria-label="Delete ${escape(entry.text)}" title="Delete word"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button></div><div class="vocab-card-meta"><span class="pill">${entrySource(entry)}</span>${entry.note?'<span class="note-indicator">Has a note</span>':''}</div><p class="context" lang="sv">${escape(entry.context)}</p><p data-vocab-audio-status="${escape(entry.id)}" class="audio-status" role="status" hidden></p><div class="vocab-details" id="vocab-details-${escape(entry.id)}" ${expanded?'':'hidden'}><h4>SAVED EXPLANATION</h4><p class="grammar">${escape(entry.lemma)} · ${escape(entry.grammar)}</p><p>${escape(entry.explanation)}</p>${entry.example?`<h4>SWEDISH EXAMPLE</h4><p class="example" lang="sv">${escape(entry.example)}</p>`:''}${entry.exampleTranslation?`<p class="source-note">${escape(entry.exampleTranslation)}</p>`:''}<div class="vocab-ai"><div class="vocab-ai-toolbar"><label>Explanation language<select data-vocab-language ${busy?'disabled':''}><option value="en" ${(entry.aiExplanation?.language||entry.language)!=='zh'?'selected':''}>English</option><option value="zh" ${(entry.aiExplanation?.language||entry.language)==='zh'?'selected':''}>中文</option></select></label><button type="button" data-ask-ai ${busy?'disabled':''}>${busy?'Asking AI…':state?.error?'Try AI again':'Ask AI'}</button></div><div class="vocab-ai-answer" aria-live="polite">${vocabularyAnswer(entry)}</div><p class="vocab-ai-status${state?.error?' error':''}" role="status">${escape(state?.error|| (busy?'Preparing an explanation and example…':''))}</p></div><label class="vocab-note-label">Your note<textarea data-vocab-note rows="3" placeholder="A memory, a connection, your own example…">${escape(entry.note)}</textarea></label><p class="save-state" data-vocab-note-state>Saved on this device</p></div></article>`;
@@ -481,6 +507,7 @@ $('#vocabulary-list').addEventListener('input',event=>{
  let indicator=card.querySelector('.note-indicator');if(!indicator&&entry.note){indicator=document.createElement('span');indicator.className='note-indicator';indicator.textContent='Has a note';card.querySelector('.vocab-card-meta').append(indicator);}else if(indicator&&!entry.note)indicator.remove();
 });
 $('#word-search').oninput=renderVocabulary;
+$('#sort-words').onclick=async()=>{const previous=evaluation.wordSort;evaluation.wordSort=previous==='oldest'?'newest':'oldest';renderVocabulary();if(!await persist()){evaluation.wordSort=previous;renderVocabulary();}};
 function download(filename,data){const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('#export-words').onclick=()=>download('lasrum-vocabulary.json',{version:1,exportedAt:new Date().toISOString(),entries});
 $('#passage').innerHTML=passages.map(p=>`<option value="${p.id}">${p.label}</option>`).join('');
@@ -539,6 +566,7 @@ async function loadConnection(){
    const response=cloudEnabled?await cloudRequest('app-config'):await fetch('/api/config');
    if(!response.ok)throw new Error('AI connection unavailable.');
    config=await response.json();
+   if(!$('#practice-view').hidden)practiceUI.render();
    $('#voice-notice').hidden=!!config.configured;
    $('#voice-notice').textContent=config.configured?'':'AI key not configured.';
    candidates.forEach(c=>$(`#generate-${c.id}`).disabled=!config.configured);
@@ -610,7 +638,7 @@ if(cloudEnabled){
  $('#account-controls').hidden=false;$('#local-mode-label').hidden=true;$('.backup-menu>summary').textContent='Account';
  cloudRuntime=new CloudRuntime({onSnapshot:applyCloudSnapshot,onStatus:syncStatus,onAccess:(user,message)=>{
    $('#workspace').hidden=!user;$('#auth-gate').hidden=!!user;$('#sign-out').hidden=!user;$('#sync-now').hidden=!user;$('#export-backup').disabled=!user;$('#import-backup').disabled=!user;$('#account-email').textContent=user?.email||'';$('#auth-message').textContent=message||'Sign in with the Google account approved for your private reading room.';
-   if(!user){tapLookup.cancel();practiceUI.reset();stopReaderSpeech();++requestId;for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();backupDraft=null;$('#backup-preview').hidden=true;$('#backup-summary').textContent='';$('#sync-conflicts').replaceChildren();$('#conflict-panel').hidden=true;$('#sync-state').textContent='Sign in to sync';expandedWords.clear();vocabularyAI.clear();entries=[];library=[];evaluation=emptySnapshot().evaluation;readingProgress={};currentDocument=null;readerPages=paginateSentences(sampleSentences);currentPage=0;sentences=readerPages[0];visible=[];active=null;articleMetadata();renderReader();updateCount();$('#vocabulary-list').replaceChildren();$('#library-list').replaceChildren();config={};lastAppSnapshot=snapshot();}
+   if(!user){document.body.classList.remove('practice-mode');tapLookup.cancel();practiceUI.reset();readingAI.clear();stopReaderSpeech();++requestId;for(const id of pendingLookups.keys())lookupTracker.cancel(id);pendingLookups.clear();backupDraft=null;$('#backup-preview').hidden=true;$('#backup-summary').textContent='';$('#sync-conflicts').replaceChildren();$('#conflict-panel').hidden=true;$('#sync-state').textContent='Sign in to sync';expandedWords.clear();vocabularyAI.clear();entries=[];library=[];evaluation=emptySnapshot().evaluation;readingProgress={};currentDocument=null;readerPages=paginateSentences(sampleSentences);currentPage=0;sentences=readerPages[0];visible=[];active=null;articleMetadata();renderReader();updateCount();$('#vocabulary-list').replaceChildren();$('#library-list').replaceChildren();config={};lastAppSnapshot=snapshot();}
    else void loadConnection();
  }});
  void cloudRuntime.start().catch(error=>$('#auth-message').textContent=error.message);
