@@ -38,9 +38,9 @@ Open http://127.0.0.1:4317. Alternatively, run `start.ps1` from PowerShell. The 
 
 Copy `.env.example` to `.env` in this project and fill in `OPENROUTER_API_KEY` locally. If `.env` already exists, edit it rather than replacing it. Restart the server after changes. Never send the key in chat or commit it to source control.
 
-The selected speech model is **google/gemini-2.5-flash-tts** through the OpenRouter speech endpoint. The initial voice comparison is **Kore vs Puck**; both are listed in the public model catalog. Change the voice IDs to compare other voices. The public catalog can be loaded without a key. Actual generation requires an OpenRouter key with credits.
+The app selects **heygen/heygen-voice-1-turbo** through the OpenRouter speech endpoint, with **nadine vs gareth** for voice comparison. The user selected the metered standard model instead of the expiring free variant. Generation requires an OpenRouter key with credits. Only this exact model is accepted, with no automatic model fallback.
 
-The model returns raw 24 kHz mono 16-bit PCM. The backend adds a WAV header for browser playback and caches audio in `.cache/`. Cache identity includes model, voice, input text, format, and instructions. No browser speech synthesis fallback is used.
+HeyGen returns raw 44.1 kHz mono 16-bit PCM. The backend adds the matching WAV header for browser playback and caches audio in `.cache/`. Cloud chunk assembly also uses 44.1 kHz. Cache identity includes model, voice, input text, format, instructions and provider options; old Gemini audio is not reused for HeyGen. The Swedish-only instruction is retained, but HeyGen ignores free-text instructions, so every request also pins `provider.options.heygen.language` to `sv`. Context is not appended to spoken input. Existing saved Gemini voice preferences are ignored when selecting a HeyGen voice. No browser speech synthesis fallback is used.
 
 Translation and explanations use **nvidia/nemotron-3.5-lightning:free**, selected by the product owner. It is configured separately from the speech model using `OPENROUTER_TEXT_MODEL`. The public catalog does not advertise JSON response-format enforcement for this model, so the application requests JSON in the prompt and validates every returned field. Free-model availability and rate limits may change.
 
@@ -56,7 +56,7 @@ Imported articles use the same automatic word/phrase lookup, automatic Swedish p
 4. Clear inline translations. Saved vocabulary remains.
 5. Read lookups use English and OpenRouter AI directly; no language/source dropdowns are shown. The microphone icon beside the selected expression replays its Swedish pronunciation.
 6. Open Words to expand a card, edit notes, or request another AI explanation. Each card has its own pronunciation button.
-7. Open Voice studio. Generate the same passage for Kore and Puck, listen, score each sample, and export the evaluation.
+7. Open Voice studio. Generate the same passage for nadine and gareth, listen, score each sample, and export the evaluation.
 
 New Read lookups require the configured OpenRouter key. Previously saved authored demo entries remain in Words with their original labels.
 

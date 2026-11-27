@@ -106,8 +106,9 @@ async function speakInReader(text,owner,context,{restart=false}={}) {
  speechState='loading';updateSpeechControls('Preparing Swedish audio…');
  speechRequest=new AbortController();
  try{
-   const voice=evaluation.preferredConfiguration?.voice||'Kore';
-   const response=await api('/api/speech',{model:'google/gemini-2.5-flash-tts',voice,text,context},speechRequest.signal);
+   const preferred=evaluation.preferredConfiguration;
+   const voice=preferred?.model==='heygen/heygen-voice-1-turbo'&&['nadine','tabitha','bram','gareth','noelle','meredith','sabrina','lucian','weston','vincent'].includes(preferred.voice)?preferred.voice:'nadine';
+   const response=await api('/api/speech',{model:'heygen/heygen-voice-1-turbo',voice,text,context},speechRequest.signal);
    const blob=await response.blob();if(generation!==speechGeneration)return;
    speechURL=URL.createObjectURL(blob);readerAudio.src=speechURL;readerAudio.playbackRate=owner===pageAudioOwner()?readerSpeed:1;speechState='ready';
    updateSpeechControls('Audio ready.');
@@ -174,8 +175,8 @@ $('#open-details').onclick=openDetails;
 $('#close-details').onclick=closeDetails;
 document.addEventListener('keydown',event=>{if(event.key==='Escape'){tapLookup.cancel();closeDetails();}});
 const candidates = [
- {id:'a',name:'Kore',voice:'Kore',model:'google/gemini-2.5-flash-tts',description:'Gemini 2.5 Flash TTS · Voice A'},
- {id:'b',name:'Puck',voice:'Puck',model:'google/gemini-2.5-flash-tts',description:'Gemini 2.5 Flash TTS · Voice B'}
+ {id:'a',name:'nadine',voice:'nadine',model:'heygen/heygen-voice-1-turbo',description:'HeyGen Voice Turbo · Voice A'},
+ {id:'b',name:'gareth',voice:'gareth',model:'heygen/heygen-voice-1-turbo',description:'HeyGen Voice Turbo · Voice B'}
 ];
 const audioURLs = new Map();
 function toast(message) {$('#toast').textContent=message;$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').hidden=true,4500);}
@@ -521,7 +522,7 @@ function resetAudio(c){const audio=$(`#audio-${c.id}`);audio.pause();audio.remov
 $('#passage').onchange=()=>{renderPassage();candidates.forEach(resetAudio);};
 for(const c of candidates){
  $(`#speed-${c.id}`).onchange=()=>{ $(`#audio-${c.id}`).playbackRate=Number($(`#speed-${c.id}`).value); };
- $(`#voice-${c.id}`).value=evaluation.voices?.[c.id]||c.voice;
+ $(`#voice-${c.id}`).value=['nadine','tabitha','bram','gareth','noelle','meredith','sabrina','lucian','weston','vincent'].includes(evaluation.voices?.[c.id])?evaluation.voices[c.id]:c.voice;
  $(`#voice-${c.id}`).onchange=()=>{evaluation.voices={...evaluation.voices,[c.id]:$(`#voice-${c.id}`).value.trim()};persist();resetAudio(c);};
  $(`#generate-${c.id}`).onclick=async()=>{
    const button=$(`#generate-${c.id}`),voice=$(`#voice-${c.id}`).value.trim(),passage=currentPassage();
@@ -554,7 +555,7 @@ $('#load-voices').onclick=async()=>{
  try{
    const response=cloudEnabled?await cloudRequest('models'):await fetch('/api/models');const raw=await response.json();if(!response.ok)throw new Error(raw.error);
    const models=Array.isArray(raw)?raw:raw.data||raw.models||[];let found=0;
-   for(const c of candidates){const model=models.find(m=>m.id===c.model);const speech=model?.output_modalities?.find(item=>item.type==='speech');const voices=speech?.supported_parameters?.voice?.values||[];
+   for(const c of candidates){const model=models.find(m=>m.id===c.model)||models.find(m=>m.id===c.model.replace(/:free$/,''));const speech=model?.output_modalities?.find(item=>item.type==='speech');const voices=speech?.supported_parameters?.voice?.values||[];
      $(`#voice-options-${c.id}`).innerHTML=voices.map(v=>`<option value="${escape(typeof v==='string'?v:v.id)}"></option>`).join('');found+=voices.length;
    }
    $('#catalog-state').textContent=found?`${found} voice options loaded. Choose an ID for each candidate. Swedish pronunciation still needs listening evaluation.`:'The catalog did not publish voice IDs for these candidates. Enter a valid provider voice ID; no voice has been assumed.';
@@ -603,7 +604,7 @@ function applyCloudSnapshot(value,{preserveActive=true}={}){
  if(!$('#practice-view').hidden&&!document.activeElement?.matches('[data-practice-note]'))practiceUI.render();
  restore?.();
  $('#preferred').value=evaluation.preferred||'';if(document.activeElement!==$('#evaluation-notes'))$('#evaluation-notes').value=evaluation.notes||'';
- candidates.forEach(c=>{if(document.activeElement!==$(`#voice-${c.id}`))$(`#voice-${c.id}`).value=evaluation.voices?.[c.id]||c.voice;});
+ candidates.forEach(c=>{if(document.activeElement!==$(`#voice-${c.id}`))$(`#voice-${c.id}`).value=['nadine','tabitha','bram','gareth','noelle','meredith','sabrina','lucian','weston','vincent'].includes(evaluation.voices?.[c.id])?evaluation.voices[c.id]:c.voice;});
  lastAppSnapshot=snapshot();applyingRemote=false;
 }
 function syncStatus(status){

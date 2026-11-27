@@ -1,5 +1,5 @@
 import {createClient} from 'npm:@supabase/supabase-js@2';
-import {TEXT_MODEL,lookupPayload,validateLookup,speechPayload,pcmWav,openRouter,problem,string} from './ai.mjs';
+import {TEXT_MODEL,SPEECH_RATE,lookupPayload,validateLookup,speechPayload,pcmWav,openRouter,problem,string} from './ai.mjs';
 import {fetchPublicArticle} from './import-url.mjs';
 const env=(name:string)=>Deno.env.get(name)||'';
 const apiKey=()=>{try{const keys=JSON.parse(env('SUPABASE_PUBLISHABLE_KEYS')||'{}');return Object.values(keys)[0] as string||env('SUPABASE_ANON_KEY');}catch{return env('SUPABASE_ANON_KEY');}};
@@ -50,7 +50,7 @@ export function handler(action:string){return async(request:Request)=>{
      if(!wav){
        const response=await openRouter('/audio/speech',payload,{key:env('OPENROUTER_API_KEY')}),type=response.headers.get('content-type')||'';
        if(!/audio\/(pcm|l16)/i.test(type)){await response.body?.cancel();throw problem(502,'The provider returned an unexpected PCM audio format.');}
-       const rate=/rate=(\d+)/i.exec(type);if(rate&&Number(rate[1])!==24000)throw problem(502,'Unexpected audio sample rate.');
+       const rate=/rate=(\d+)/i.exec(type);if(rate&&Number(rate[1])!==SPEECH_RATE)throw problem(502,'Unexpected audio sample rate.');
        const bytes=new Uint8Array(await response.arrayBuffer());if(bytes.length>25*1024*1024)throw problem(502,'The provider returned oversized audio.');wav=pcmWav(bytes);
        // Cache failure must not discard successfully generated audio.
        try{await trimAudio(admin,user.id,wav.length);const stored=await admin.storage.from('speech-cache').upload(path,wav,{contentType:'audio/wav',upsert:true});if(!stored.error)await admin.from('audio_cache').upsert({owner_id:user.id,hash,path,bytes:wav.length,last_access:new Date().toISOString(),expires_at:new Date(Date.now()+7*86400000).toISOString()});}catch{/* Return the audio and retry caching on a later request. */}

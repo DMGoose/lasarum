@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {IDBFactory} from 'fake-indexeddb';
 import {AudioCache} from '../public/audio-cache.js';
-const data={model:'google/gemini-2.5-flash-tts',voice:'Kore',text:'stilla',context:'Det är en stilla morgon.'};
+const data={model:'heygen/heygen-voice-1-turbo',voice:'nadine',text:'stilla',context:'Det är en stilla morgon.'};
 function audio(){const bytes=new Uint8Array(48),view=new DataView(bytes.buffer);for(const [at,text] of [[0,'RIFF'],[8,'WAVE'],[36,'data']])for(let i=0;i<text.length;i++)bytes[at+i]=text.charCodeAt(i);view.setUint32(4,40,true);view.setUint32(40,4,true);return new Response(bytes,{headers:{'Content-Type':'audio/wav'}});}
 
 test('requested audio persists across reopening without another service request or prefetch',async t=>{
@@ -15,7 +15,7 @@ test('requested audio persists across reopening without another service request 
 
 test('audio cache isolates accounts, Swedish context, model and voice',async t=>{
  const cache=new AudioCache({indexedDB:new IDBFactory()});t.after(()=>cache.close());let calls=0;const fetchAudio=async()=>{calls++;return audio();};
- for(const [input,account] of [[data,'owner'],[data,'other'],[{...data,voice:'Puck'},'owner'],[{...data,context:'Hon vill stilla sin hunger.'},'owner'],[{...data,model:'other-model'},'owner']])await cache.response(input,{account,fetchAudio});
+ for(const [input,account] of [[data,'owner'],[data,'other'],[{...data,voice:'gareth'},'owner'],[{...data,context:'Hon vill stilla sin hunger.'},'owner'],[{...data,model:'other-model'},'owner']])await cache.response(input,{account,fetchAudio});
  assert.equal(calls,5);await cache.response(data,{account:'owner',fetchAudio});assert.equal(calls,5);
 });
 

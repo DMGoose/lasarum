@@ -28,9 +28,9 @@ test('web article import is local-token protected and returns preview without an
 });
 test('long imported articles synthesize bounded chunks and combine into one seekable WAV',async t=>{
  const inputs=[];const app=await setup(t,{apiKey:'test-key',request:async(_url,options)=>{
-   inputs.push(JSON.parse(options.body).input);return new Response(Buffer.alloc(4800),{headers:{'Content-Type':'audio/pcm;rate=24000'}});
+   inputs.push(JSON.parse(options.body).input);return new Response(Buffer.alloc(4800),{headers:{'Content-Type':'audio/pcm;rate=44100'}});
  }});
- const text='Jag läser svenska. '.repeat(330),data={model:'google/gemini-2.5-flash-tts',voice:'Kore',text};
+ const text='Jag läser svenska. '.repeat(330),data={model:'heygen/heygen-voice-1-turbo',voice:'nadine',text};
  const response=await app.post('/api/speech',data);assert.equal(response.status,200);
  const wav=Buffer.from(await response.arrayBuffer());assert.ok(inputs.length>1);assert.ok(inputs.every(input=>input.length<=2800));
  assert.equal(inputs.join(' '),text.trim());assert.equal(wav.readUInt32LE(40),inputs.length*4800);
@@ -38,39 +38,39 @@ test('long imported articles synthesize bounded chunks and combine into one seek
 });
 test('missing credentials fail clearly and secrets are not served',async t=>{
  const app=await setup(t,{apiKey:''});assert.equal(app.config.configured,false);
- const res=await app.post('/api/speech',{model:'google/gemini-2.5-flash-tts',voice:'Kore',text:'Hej.'});assert.equal(res.status,503);
+ const res=await app.post('/api/speech',{model:'heygen/heygen-voice-1-turbo',voice:'nadine',text:'Hej.'});assert.equal(res.status,503);
  assert.equal((await fetch(`${app.base}/.env`)).status,404);
  assert.equal((await fetch(`${app.base}/api/lookup`,{method:'POST',body:'{}'})).status,403);
  assert.equal((await fetch(`${app.base}/api/config`,{headers:{Origin:'https://example.com'}})).status,403);
 });
-test('speech uses selected Gemini model, returns WAV, and reuses cache by voice and content',async t=>{
+test('speech uses selected HeyGen model, returns WAV, and reuses cache by voice and content',async t=>{
  let calls=0;
  const app=await setup(t,{apiKey:'test-key',request:async(url,options)=>{
    calls++;assert.equal(url,'https://openrouter.ai/api/v1/audio/speech');const payload=JSON.parse(options.body);
-   assert.equal(payload.model,'google/gemini-2.5-flash-tts');assert.equal(payload.response_format,'pcm');
+   assert.equal(payload.model,'heygen/heygen-voice-1-turbo');assert.equal(payload.response_format,'pcm');assert.equal(payload.provider.options.heygen.language,'sv');
    assert.match(payload.instructions,/Språk: svenska \(sv-SE\)/);
    assert.match(payload.instructions,/enstaka ord och korta fraser/);
    assert.match(payload.instructions,/Använd aldrig engelskt uttal eller engelsk accent/);
-   return new Response(Buffer.alloc(4800),{headers:{'Content-Type':'audio/pcm;rate=24000'}});
+   return new Response(Buffer.alloc(4800),{headers:{'Content-Type':'audio/pcm;rate=44100'}});
  }});
- const data={model:'google/gemini-2.5-flash-tts',voice:'Kore',text:'Hej världen.'};
+ const data={model:'heygen/heygen-voice-1-turbo',voice:'nadine',text:'Hej världen.'};
  const one=await app.post('/api/speech',data);assert.equal(one.status,200);assert.equal(one.headers.get('content-type'),'audio/wav');assert.equal(one.headers.get('x-audio-cache'),'miss');
- assert.equal((await one.arrayBuffer()).byteLength,4844);
+ const wav=Buffer.from(await one.arrayBuffer());assert.equal(wav.byteLength,4844);assert.equal(wav.readUInt32LE(24),44100);
  const two=await app.post('/api/speech',data);assert.equal(two.headers.get('x-audio-cache'),'hit');assert.equal(calls,1);
- await app.post('/api/speech',{...data,voice:'Puck'});assert.equal(calls,2);
+ await app.post('/api/speech',{...data,voice:'gareth'});assert.equal(calls,2);
 });
 test('provider error bodies and invalid audio are not exposed as playable media',async t=>{
  const app=await setup(t,{apiKey:'test-key',request:async()=>new Response('{"error":"internal provider detail"}',{headers:{'Content-Type':'application/json'}})});
- const response=await app.post('/api/speech',{model:'google/gemini-2.5-flash-tts',voice:'Kore',text:'Hej.'});
+ const response=await app.post('/api/speech',{model:'heygen/heygen-voice-1-turbo',voice:'nadine',text:'Hej.'});
  assert.equal(response.status,502);assert.match((await response.json()).error,/unexpected PCM/);
 });
 
 test('isolated Swedish homographs use sentence context without reading the context aloud',async t=>{
  const payloads=[];
  const app=await setup(t,{apiKey:'test-key',request:async(_url,options)=>{
-   payloads.push(JSON.parse(options.body));return new Response(Buffer.alloc(4800),{headers:{'Content-Type':'audio/pcm;rate=24000'}});
+   payloads.push(JSON.parse(options.body));return new Response(Buffer.alloc(4800),{headers:{'Content-Type':'audio/pcm;rate=44100'}});
  }});
- const data={model:'google/gemini-2.5-flash-tts',voice:'Kore',text:'glass',context:'Jag äter glass.'};
+ const data={model:'heygen/heygen-voice-1-turbo',voice:'nadine',text:'glass',context:'Jag äter glass.'};
  assert.equal((await app.post('/api/speech',data)).status,200);
  assert.equal(payloads[0].input,'glass');
  assert.match(payloads[0].instructions,/Språk: svenska \(sv-SE\)/);

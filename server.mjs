@@ -6,7 +6,7 @@ import path from 'node:path';
 import {createHash, randomBytes} from 'node:crypto';
 import {fetchPublicArticle} from './import-url.mjs';
 import {speechChunks} from './public/library.js';
-import {speechInstructions,lookupQuestion} from './supabase/functions/_shared/ai.mjs';
+import {speechPayload,SPEECH_RATE,lookupQuestion} from './supabase/functions/_shared/ai.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 if (existsSync(path.join(root, '.env'))) process.loadEnvFile(path.join(root, '.env'));
@@ -103,11 +103,9 @@ export function createApp({apiKey = process.env.OPENROUTER_API_KEY || '', textMo
          return json(200,result);
        }
        if (url.pathname === '/api/speech') {
-         const model = string(data.model,'speech model',160), voice = string(data.voice,'voice',200), input = string(data.text,'speech text',100000);
-         if (model !== 'google/gemini-2.5-flash-tts') throw error(400,'Phase 0 uses google/gemini-2.5-flash-tts.');
-         const context = data.context === undefined ? '' : string(data.context,'Swedish pronunciation context',3000);
-         const instructions = speechInstructions(input,context);
-         const payload = {model,voice,input,response_format:'pcm',instructions};
+         const input=string(data.text,'speech text',100000);
+         const payload=speechPayload({...data,text:input.slice(0,2800)});
+         payload.input=input;
          const digest = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
          const filename = path.join(cacheDir,`${digest}.wav`);
          let cached = true, audio;
@@ -117,17 +115,17 @@ export function createApp({apiKey = process.env.OPENROUTER_API_KEY || '', textMo
            audio = await once(digest,async()=>{
              const audioParts=[];let totalBytes=0;
              for(const part of speechChunks(input,700)){
-             const response = await upstream('/audio/speech',{...payload,input:part});
+             const response = await upstream('/audio/speech',speechPayload({...data,text:part}));
              const type = (response.headers.get('content-type') || '').toLowerCase();
              if (!type.includes('audio/pcm') && !type.includes('audio/l16')) {await response.body?.cancel();throw error(502,'The provider returned an unexpected PCM audio format.');}
              const bytes = Buffer.from(await response.arrayBuffer());
              if (!bytes.length || bytes.length > 25*1024*1024) throw error(502,'The provider returned empty or oversized audio.');
              const rate = /rate=(\d+)/i.exec(type)?.[1];
-             if (rate && Number(rate)!==24000) throw error(502,'Unexpected audio sample rate.');
+             if (rate && Number(rate)!==SPEECH_RATE) throw error(502,'Unexpected audio sample rate.');
              audioParts.push(bytes);totalBytes+=bytes.length;
              if(totalBytes>100*1024*1024)throw error(413,'This article produces too much audio. Import a shorter section to listen.');
              }
-             const wav = pcmToWav(Buffer.concat(audioParts));
+             const wav = pcmToWav(Buffer.concat(audioParts),SPEECH_RATE);
              await mkdir(cacheDir,{recursive:true}); await writeFile(filename,wav); return wav;
            });
          }

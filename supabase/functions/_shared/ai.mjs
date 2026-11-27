@@ -1,5 +1,7 @@
 export const TEXT_MODEL='nvidia/nemotron-3.5-lightning:free';
-export const SPEECH_MODEL='google/gemini-2.5-flash-tts';
+export const SPEECH_RATE=44100;
+export const SPEECH_VOICES=['nadine','tabitha','bram','gareth','noelle','meredith','sabrina','lucian','weston','vincent'];
+export const SPEECH_MODEL='heygen/heygen-voice-1-turbo';
 export const problem=(status,message)=>Object.assign(new Error(message),{status});
 export function string(value,name,max){if(typeof value!=='string'||!value.trim()||value.length>max)throw problem(400,`Invalid ${name}.`);return value.trim();}
 export function lookupQuestion(value){if(value===undefined||value===null)return '';if(typeof value!=='string'||value.length>1000)throw problem(400,'Your question must be at most 1000 characters.');return value.trim();}
@@ -32,14 +34,16 @@ export function speechInstructions(input,context=''){
 export function speechPayload(data){
  const model=string(data.model,'speech model',160),voice=string(data.voice,'voice',200),input=string(data.text,'speech text',2800);
  if(model!==SPEECH_MODEL)throw problem(400,`Use ${SPEECH_MODEL}.`);
+ if(!SPEECH_VOICES.includes(voice))throw problem(400,'Choose a HeyGen voice from the catalog.');
  const context=data.context===undefined?'':string(data.context,'Swedish pronunciation context',3000);
  const instructions=speechInstructions(input,context);
- return {model,voice,input,response_format:'pcm',instructions};
+ // HeyGen ignores free-text instructions; pin its actual provider language too.
+ return {model,voice,input,response_format:'pcm',instructions,provider:{options:{heygen:{language:'sv'}}}};
 }
-export function pcmWav(pcm){
+export function pcmWav(pcm,sampleRate=SPEECH_RATE){
  if(!pcm.length||pcm.length%2)throw problem(502,'Invalid 16-bit PCM audio.');
  const output=new Uint8Array(44+pcm.length),view=new DataView(output.buffer),text=(offset,value)=>{for(let i=0;i<value.length;i++)output[offset+i]=value.charCodeAt(i);};
- text(0,'RIFF');view.setUint32(4,36+pcm.length,true);text(8,'WAVE');text(12,'fmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,24000,true);view.setUint32(28,48000,true);view.setUint16(32,2,true);view.setUint16(34,16,true);text(36,'data');view.setUint32(40,pcm.length,true);output.set(pcm,44);return output;
+ text(0,'RIFF');view.setUint32(4,36+pcm.length,true);text(8,'WAVE');text(12,'fmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,sampleRate,true);view.setUint32(28,sampleRate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);text(36,'data');view.setUint32(40,pcm.length,true);output.set(pcm,44);return output;
 }
 export async function openRouter(endpoint,payload,{fetcher=fetch,key,signal}={}){
  if(!key)throw problem(503,'OpenRouter is not configured on the cloud server.');
